@@ -69,13 +69,13 @@
   function checkForUpdate() {
     const lastChecked = GM_getValue("lastUpdateCheck", 0);
     const now = Date.now();
-    if (now - lastChecked < 6 * 60 * 60 * 1000) return;
+    if (now - lastChecked < 20 * 1000) return;
 
     GM_setValue("lastUpdateCheck", now);
 
     GM_xmlhttpRequest({
       method: "GET",
-      url: "https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/version.json",
+      url: `https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/version.json?ts=${Date.now()}`,
       onload: (res) => {
         try {
           const latest = JSON.parse(res.responseText);
