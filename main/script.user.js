@@ -75,7 +75,7 @@
 
     GM_xmlhttpRequest({
       method: "GET",
-      url: "https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/version.json",
+      url: "https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/version.json",
       onload: (res) => {
         try {
           const latest = JSON.parse(res.responseText);
@@ -86,7 +86,7 @@
               timeout: 10000,
               onclick: () => {
                 window.open(
-                  "https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/script.user.js",
+                  "https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/script.user.js",
                   _blank
                 );
               },
