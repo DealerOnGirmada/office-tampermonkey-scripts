@@ -5,10 +5,12 @@
 // @version      1.0.0
 // @author       Pratik Chabria
 // @match        *://*/*
-// @grant        GM_getValue
-// @grant        GM_setValue
 // @updateURL    https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/script.user.js
 // @downloadURL  https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/script.user.js
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_notification
+// @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
 (function () {
@@ -19,6 +21,7 @@
   // Modify this section to add new global variables or settings
   // ============================================================================
 
+  const CURRENT_VERSION = "1.0.0";
   let analysisActive = false;
   let analysisCancelled = false;
   let overlays = [];
@@ -39,7 +42,7 @@
     showVideos: true,
     enableSounds: true,
     defaultFilter: "all",
-    showImagePreviews: true
+    showImagePreviews: true,
   };
 
   function loadSettings() {
@@ -53,13 +56,57 @@
     GM_setValue("userSettings", userSettings);
   }
 
-      // ============================================================================
+  function isNewVersion(remote, local) {
+    const r = remote.split(".").map(Number);
+    const l = local.split(".").map(Number);
+    for (let i = 0; i < r.length; i++) {
+      if ((r[i] || 0) > (l[i] || 0)) return true;
+      if ((r[i] || 0) < (l[i] || 0)) return false;
+    }
+    return false;
+  }
+
+  function checkForUpdate() {
+    const lastChecked = GM_getValue("lastUpdateCheck", 0);
+    const now = Date.now();
+    if (now - lastChecked < 6 * 60 * 60 * 1000) return;
+
+    GM_setValue("lastUpdateCheck", now);
+
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: "https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/version.json",
+      onload: (res) => {
+        try {
+          const latest = JSON.parse(res.responseText);
+          if (isNewVersion(latest.version, CURRENT_VERSION)) {
+            GM_notification({
+              title: `Version ${latest.version} available`,
+              text: latest.notes + "\nClick to update",
+              timeout: 10000,
+              onclick: () => {
+                window.open(
+                  "https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/script.user.js",
+                  _blank
+                );
+              },
+            });
+          }
+        } catch (e) {
+          console.error("UPDATE CHECK FAILED:", e);
+        }
+      },
+    });
+  }
+
+  checkForUpdate();
+
+  // ============================================================================
   // SECTION 2: KEYBOARD SHORTCUTS & ANIMATIONS
   // Modify this section to add new shortcuts or animation effects
   // ============================================================================
 
-    // Keyboard shortcuts removed - Section reserved for future features
-
+  // Keyboard shortcuts removed - Section reserved for future features
 
   function triggerConfetti() {
     const colors = ["#2ecc71", "#3498db", "#f39c12", "#e74c3c", "#9b59b6"];
@@ -81,7 +128,8 @@
   function playSound(frequency = 523.25, duration = 200) {
     if (!userSettings.enableSounds) return;
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
       oscillator.connect(gainNode);
@@ -89,7 +137,10 @@
       oscillator.frequency.value = frequency;
       oscillator.type = "sine";
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration / 1000);
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContext.currentTime + duration / 1000
+      );
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + duration / 1000);
     } catch (e) {
@@ -97,7 +148,7 @@
     }
   }
 
-      // ============================================================================
+  // ============================================================================
   // SECTION 3: STYLES INJECTION
   // Modify this section to add new CSS classes or animations
   // NEW: Added styles for image preview and crop tool
@@ -387,7 +438,12 @@
   }
 
   function showToast(message, type = "info") {
-    const colors = {success: "#2ecc71", error: "#e74c3c", warning: "#f39c12", info: "#3498db"};
+    const colors = {
+      success: "#2ecc71",
+      error: "#e74c3c",
+      warning: "#f39c12",
+      info: "#3498db",
+    };
     const toast = document.createElement("div");
     toast.style.cssText = `position: fixed; top: 20px; right: 20px; z-index: 9999999; background: ${colors[type]}; color: white; padding: 14px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.2); animation: slideIn 0.3s; max-width: 350px;`;
     toast.textContent = message;
@@ -401,14 +457,17 @@
   }
 
   function copyToClipboard(text, successMessage = "Copied to clipboard!") {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast(successMessage, "success");
-    }).catch(() => {
-      showToast("Failed to copy", "error");
-    });
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        showToast(successMessage, "success");
+      })
+      .catch(() => {
+        showToast("Failed to copy", "error");
+      });
   }
 
-    function detectPageBlocks() {
+  function detectPageBlocks() {
     const blocks = [];
     const seenIds = new Set();
 
@@ -417,20 +476,40 @@
     blockElements.forEach((el) => {
       if (!seenIds.has(el.id)) {
         seenIds.add(el.id);
-        blocks.push({id: el.id, type: "block", element: el, name: el.id.charAt(0).toUpperCase() + el.id.slice(1), images: []});
+        blocks.push({
+          id: el.id,
+          type: "block",
+          element: el,
+          name: el.id.charAt(0).toUpperCase() + el.id.slice(1),
+          images: [],
+        });
       }
     });
 
     // Detect elements with class containing 'contentSection'
-    const contentSectionElements = document.querySelectorAll("[class*='contentSection']");
+    const contentSectionElements = document.querySelectorAll(
+      "[class*='contentSection']"
+    );
     contentSectionElements.forEach((el) => {
       const classList = Array.from(el.classList);
-      const contentSectionClass = classList.find(cls => cls.includes('contentSection'));
+      const contentSectionClass = classList.find((cls) =>
+        cls.includes("contentSection")
+      );
       if (contentSectionClass && !seenIds.has(contentSectionClass)) {
         seenIds.add(contentSectionClass);
-        let name = contentSectionClass.replace('contentSection', '').replace(/([A-Z])/g, ' $1').trim();
-        if (!name || name.length <= 2) name = `Section ${contentSectionClass.replace('contentSection', '')}`;
-        blocks.push({id: contentSectionClass, type: "contentSection", element: el, name: name, images: []});
+        let name = contentSectionClass
+          .replace("contentSection", "")
+          .replace(/([A-Z])/g, " $1")
+          .trim();
+        if (!name || name.length <= 2)
+          name = `Section ${contentSectionClass.replace("contentSection", "")}`;
+        blocks.push({
+          id: contentSectionClass,
+          type: "contentSection",
+          element: el,
+          name: name,
+          images: [],
+        });
       }
     });
 
@@ -440,7 +519,13 @@
       const id = `quickIntro-${idx}`;
       if (!seenIds.has(id)) {
         seenIds.add(id);
-        blocks.push({id: id, type: "class", element: el, name: "Quick Intro", images: []});
+        blocks.push({
+          id: id,
+          type: "class",
+          element: el,
+          name: "Quick Intro",
+          images: [],
+        });
       }
     });
 
@@ -450,7 +535,13 @@
       const id = `introSec-${idx}`;
       if (!seenIds.has(id)) {
         seenIds.add(id);
-        blocks.push({id: id, type: "class", element: el, name: "Intro Section", images: []});
+        blocks.push({
+          id: id,
+          type: "class",
+          element: el,
+          name: "Intro Section",
+          images: [],
+        });
       }
     });
 
@@ -460,13 +551,18 @@
       const id = `bonusBlock-${idx}`;
       if (!seenIds.has(id)) {
         seenIds.add(id);
-        blocks.push({id: id, type: "class", element: el, name: "Bonus Block", images: []});
+        blocks.push({
+          id: id,
+          type: "class",
+          element: el,
+          name: "Bonus Block",
+          images: [],
+        });
       }
     });
 
     return blocks;
   }
-
 
   function getImagesInBlock(blockElement) {
     const images = [];
@@ -474,8 +570,25 @@
     imgElements.forEach((img) => {
       const rect = img.getBoundingClientRect();
       const style = getComputedStyle(img);
-      const isVisible = !!img.offsetParent && style.display !== "none" && style.visibility !== "hidden" && parseFloat(style.opacity || "1") > 0 && rect.width > 0 && rect.height > 0;
-      images.push({element: img, src: img.currentSrc || img.src, type: "img", visible: isVisible, lazyLoaded: img.hasAttribute("loading") || img.hasAttribute("data-src"), responsive: img.hasAttribute("srcset"), dimensions: {natural: {width: img.naturalWidth, height: img.naturalHeight}, display: {width: img.width, height: img.height}}});
+      const isVisible =
+        !!img.offsetParent &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        parseFloat(style.opacity || "1") > 0 &&
+        rect.width > 0 &&
+        rect.height > 0;
+      images.push({
+        element: img,
+        src: img.currentSrc || img.src,
+        type: "img",
+        visible: isVisible,
+        lazyLoaded: img.hasAttribute("loading") || img.hasAttribute("data-src"),
+        responsive: img.hasAttribute("srcset"),
+        dimensions: {
+          natural: { width: img.naturalWidth, height: img.naturalHeight },
+          display: { width: img.width, height: img.height },
+        },
+      });
     });
     const allElements = blockElement.querySelectorAll("*");
     const uniqueBgSrcs = new Set();
@@ -489,7 +602,13 @@
           if (!url || url.startsWith("data:") || uniqueBgSrcs.has(url)) return;
           uniqueBgSrcs.add(url);
           const rect = el.getBoundingClientRect();
-          images.push({element: el, src: url, type: "background", visible: rect.width > 0 && rect.height > 0, dimensions: {display: {width: rect.width, height: rect.height}}});
+          images.push({
+            element: el,
+            src: url,
+            type: "background",
+            visible: rect.width > 0 && rect.height > 0,
+            dimensions: { display: { width: rect.width, height: rect.height } },
+          });
         });
       }
     });
@@ -497,12 +616,24 @@
   }
 
   async function analyzeBlock(block) {
-    const blockAnalysis = {blockId: block.id, blockName: block.name, blockType: block.type, images: [], score: 0, breakdown: {}, grade: "N/A"};
+    const blockAnalysis = {
+      blockId: block.id,
+      blockName: block.name,
+      blockType: block.type,
+      images: [],
+      score: 0,
+      breakdown: {},
+      grade: "N/A",
+    };
     const blockImages = getImagesInBlock(block.element);
     for (const img of blockImages) {
       const size = await getImageSize(img.src);
       if (!size) continue;
-      blockAnalysis.images.push({...img, size, optimization: getOptimizationLevel(size)});
+      blockAnalysis.images.push({
+        ...img,
+        size,
+        optimization: getOptimizationLevel(size),
+      });
     }
     const blockScore = calculatePerformanceScore(blockAnalysis.images, []);
     blockAnalysis.score = blockScore.score;
@@ -513,12 +644,18 @@
 
   // END SECTION 4
 
-      // ============================================================================
+  // ============================================================================
   // SECTION 5: IMAGE COMPRESSION & FORMAT DETECTION
   // Modify this section to change compression logic or add new formats
   // ============================================================================
 
-  async function compressImage(img, quality, maxWidth, maxHeight, format = "jpeg") {
+  async function compressImage(
+    img,
+    quality,
+    maxWidth,
+    maxHeight,
+    format = "jpeg"
+  ) {
     return new Promise((resolve, reject) => {
       try {
         const canvas = document.createElement("canvas");
@@ -541,7 +678,7 @@
         const mimeTypes = {
           jpeg: "image/jpeg",
           webp: "image/webp",
-          png: "image/png"
+          png: "image/png",
         };
 
         canvas.toBlob(
@@ -564,7 +701,7 @@
     return {
       webp: canvas.toDataURL("image/webp").indexOf("data:image/webp") === 0,
       jpeg: true,
-      png: true
+      png: true,
     };
   }
   // ============================================================================
@@ -621,7 +758,9 @@
       <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:24px;">
         <div style="padding:14px; background:rgba(25,50,93,0.05); border-radius:10px; text-align:center;">
           <div style="font-size:11px; color:#666; margin-bottom:4px;">Original</div>
-          <div style="font-size:20px; font-weight:700; color:#19325d;">${formatBytes(imgData.size)}</div>
+          <div style="font-size:20px; font-weight:700; color:#19325d;">${formatBytes(
+            imgData.size
+          )}</div>
         </div>
         <div style="padding:14px; background:rgba(46,204,113,0.05); border-radius:10px; text-align:center;">
           <div style="font-size:11px; color:#666; margin-bottom:4px;">Compressed</div>
@@ -639,17 +778,23 @@
 
       <div style="background:rgba(0,0,0,0.03); padding:12px; border-radius:8px; margin-bottom:20px;">
         <div style="font-size:12px; color:#666; margin-bottom:8px;">
-          📐 Dimensions: ${loadedImage.naturalWidth} × ${loadedImage.naturalHeight}px
+          📐 Dimensions: ${loadedImage.naturalWidth} × ${
+      loadedImage.naturalHeight
+    }px
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
           <div>
             <label style="font-size:11px; color:#666; display:block; margin-bottom:4px;">Max Width</label>
-            <input type="number" id="maxWidth" value="${loadedImage.naturalWidth}" min="100"
+            <input type="number" id="maxWidth" value="${
+              loadedImage.naturalWidth
+            }" min="100"
               style="width:100%; padding:8px; border:1px solid rgba(0,0,0,0.1); border-radius:6px; font-size:13px;">
           </div>
           <div>
             <label style="font-size:11px; color:#666; display:block; margin-bottom:4px;">Max Height</label>
-            <input type="number" id="maxHeight" value="${loadedImage.naturalHeight}" min="100"
+            <input type="number" id="maxHeight" value="${
+              loadedImage.naturalHeight
+            }" min="100"
               style="width:100%; padding:8px; border:1px solid rgba(0,0,0,0.1); border-radius:6px; font-size:13px;">
           </div>
         </div>
@@ -657,15 +802,27 @@
 
       <div style="margin-bottom:20px;">
         <label style="font-size:12px; font-weight:600; color:#19325d; display:block; margin-bottom:10px;">📦 Output Format</label>
-        <div style="display:grid; grid-template-columns: repeat(${formatOptions.length}, 1fr); gap:8px;">
+        <div style="display:grid; grid-template-columns: repeat(${
+          formatOptions.length
+        }, 1fr); gap:8px;">
           ${formatOptions
             .map(
               (fmt, i) => `
             <button class="format-btn spa-btn" data-format="${fmt}"
-              style="padding:10px; border:2px solid ${i === 0 ? "#fb741c" : "rgba(0,0,0,0.1)"};
-              background:${i === 0 ? "rgba(251,116,28,0.1)" : "white"}; border-radius:8px;
+              style="padding:10px; border:2px solid ${
+                i === 0 ? "#fb741c" : "rgba(0,0,0,0.1)"
+              };
+              background:${
+                i === 0 ? "rgba(251,116,28,0.1)" : "white"
+              }; border-radius:8px;
               cursor:pointer; font-size:12px; font-weight:600; text-transform:uppercase;">
-              ${fmt}${fmt === "webp" ? " • Best" : fmt === "jpeg" ? " • Compatible" : ""}
+              ${fmt}${
+                fmt === "webp"
+                  ? " • Best"
+                  : fmt === "jpeg"
+                  ? " • Compatible"
+                  : ""
+              }
             </button>
           `
             )
@@ -675,11 +832,17 @@
 
       <div style="margin-bottom:24px;">
         <label style="display:block; margin-bottom:10px; font-weight:600; font-size:13px; color:#19325d;">
-          ⚡ Quality <span id="qualityValue" style="color:#fb741c;">${userSettings.defaultQuality}</span>
+          ⚡ Quality <span id="qualityValue" style="color:#fb741c;">${
+            userSettings.defaultQuality
+          }</span>
         </label>
-        <input type="range" id="qualitySlider" min="10" max="100" value="${userSettings.defaultQuality}" step="5"
+        <input type="range" id="qualitySlider" min="10" max="100" value="${
+          userSettings.defaultQuality
+        }" step="5"
           style="width:100%; height:6px; border-radius:5px; outline:none; cursor:pointer;
-          background:linear-gradient(to right, #fb741c ${userSettings.defaultQuality}%, #e0e0e0 ${userSettings.defaultQuality}%);">
+          background:linear-gradient(to right, #fb741c ${
+            userSettings.defaultQuality
+          }%, #e0e0e0 ${userSettings.defaultQuality}%);">
         <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:10px; color:#999;">
           <span>Low Quality</span><span>Recommended</span><span>High Quality</span>
         </div>
@@ -724,10 +887,22 @@
         `;
 
         const quality = parseInt(qualitySlider.value || "80", 10) / 100;
-        const maxW = parseInt(maxWidthInput.value || String(loadedImage.naturalWidth), 10);
-        const maxH = parseInt(maxHeightInput.value || String(loadedImage.naturalHeight), 10);
+        const maxW = parseInt(
+          maxWidthInput.value || String(loadedImage.naturalWidth),
+          10
+        );
+        const maxH = parseInt(
+          maxHeightInput.value || String(loadedImage.naturalHeight),
+          10
+        );
 
-        const blob = await compressImage(loadedImage, quality, maxW, maxH, selectedFormat);
+        const blob = await compressImage(
+          loadedImage,
+          quality,
+          maxW,
+          maxH,
+          selectedFormat
+        );
         cachedBlob = blob;
         const newSize = blob.size;
         const savings = imgData.size - newSize;
@@ -735,10 +910,14 @@
 
         compressedSize.textContent = formatBytes(newSize);
         if (savings >= 0) {
-          savingsAmount.textContent = `${formatBytes(savings)} (${savingsPercent.toFixed(1)}%)`;
+          savingsAmount.textContent = `${formatBytes(
+            savings
+          )} (${savingsPercent.toFixed(1)}%)`;
           savingsAmount.style.color = "#2ecc71";
         } else {
-          savingsAmount.textContent = `${formatBytes(Math.abs(savings))} larger`;
+          savingsAmount.textContent = `${formatBytes(
+            Math.abs(savings)
+          )} larger`;
           savingsAmount.style.color = "#e74c3c";
         }
       } catch (error) {
@@ -789,12 +968,26 @@
         let blob = cachedBlob;
         if (!blob) {
           const quality = parseInt(qualitySlider.value || "80", 10) / 100;
-          const maxW = parseInt(maxWidthInput.value || String(loadedImage.naturalWidth), 10);
-          const maxH = parseInt(maxHeightInput.value || String(loadedImage.naturalHeight), 10);
-          blob = await compressImage(loadedImage, quality, maxW, maxH, selectedFormat);
+          const maxW = parseInt(
+            maxWidthInput.value || String(loadedImage.naturalWidth),
+            10
+          );
+          const maxH = parseInt(
+            maxHeightInput.value || String(loadedImage.naturalHeight),
+            10
+          );
+          blob = await compressImage(
+            loadedImage,
+            quality,
+            maxW,
+            maxH,
+            selectedFormat
+          );
         }
 
-        const filename = (imgData.src.split("/").pop() || "image").split("?")[0].replace(/\.[^.]*$/, "");
+        const filename = (imgData.src.split("/").pop() || "image")
+          .split("?")[0]
+          .replace(/\.[^.]*$/, "");
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -808,7 +1001,9 @@
         status.style.display = "block";
         status.style.background = "rgba(46,204,113,0.1)";
         status.style.color = "#2ecc71";
-        status.innerHTML = `<strong>✅ Downloaded!</strong> Original: ${formatBytes(imgData.size)} • Compressed: ${formatBytes(blob.size)}`;
+        status.innerHTML = `<strong>✅ Downloaded!</strong> Original: ${formatBytes(
+          imgData.size
+        )} • Compressed: ${formatBytes(blob.size)}`;
         showToast("Image compressed and downloaded!", "success");
         setTimeout(() => document.body.removeChild(backdrop), 2000);
       } catch (error) {
@@ -846,13 +1041,33 @@
 
   function getOptimizationLevel(size) {
     if (size > 500 * 1024) {
-      return { level: "CRITICAL", color: "#e74c3c", bgColor: "rgba(231,76,60,0.15)", score: 0 };
+      return {
+        level: "CRITICAL",
+        color: "#e74c3c",
+        bgColor: "rgba(231,76,60,0.15)",
+        score: 0,
+      };
     } else if (size > 200 * 1024) {
-      return { level: "WARNING", color: "#f39c12", bgColor: "rgba(243,156,18,0.15)", score: 50 };
+      return {
+        level: "WARNING",
+        color: "#f39c12",
+        bgColor: "rgba(243,156,18,0.15)",
+        score: 50,
+      };
     } else if (size > 100 * 1024) {
-      return { level: "NOTICE", color: "#3498db", bgColor: "rgba(52,152,219,0.15)", score: 75 };
+      return {
+        level: "NOTICE",
+        color: "#3498db",
+        bgColor: "rgba(52,152,219,0.15)",
+        score: 75,
+      };
     }
-    return { level: "GOOD", color: "#2ecc71", bgColor: "rgba(46,204,113,0.15)", score: 100 };
+    return {
+      level: "GOOD",
+      color: "#2ecc71",
+      bgColor: "rgba(46,204,113,0.15)",
+      score: 100,
+    };
   }
 
   function getImageRecommendations(imgData, size, format) {
@@ -860,13 +1075,16 @@
     const support = detectFormatSupport();
 
     // Format recommendation
-    if ((format === "jpg" || format === "jpeg" || format === "png") && support.webp) {
+    if (
+      (format === "jpg" || format === "jpeg" || format === "png") &&
+      support.webp
+    ) {
       recommendations.push({
         type: "format",
         priority: "high",
         icon: "🗜️",
         message: "Convert to WebP for 25–35% size reduction",
-        impact: "High"
+        impact: "High",
       });
     }
 
@@ -877,7 +1095,7 @@
         priority: "medium",
         icon: "⏳",
         message: 'Add loading="lazy" attribute',
-        impact: "Medium"
+        impact: "Medium",
       });
     }
 
@@ -888,24 +1106,34 @@
         priority: "medium",
         icon: "📱",
         message: "Use srcset for responsive images",
-        impact: "Medium"
+        impact: "Medium",
       });
     }
 
     // Oversized images
     if (imgData.type === "img") {
-      const naturalWidth = imgData.dimensions?.natural?.width || imgData.element?.naturalWidth || 0;
-      const naturalHeight = imgData.dimensions?.natural?.height || imgData.element?.naturalHeight || 0;
-      const displayWidth = imgData.dimensions?.display?.width || imgData.element?.width || 0;
-      const displayHeight = imgData.dimensions?.display?.height || imgData.element?.height || 0;
+      const naturalWidth =
+        imgData.dimensions?.natural?.width ||
+        imgData.element?.naturalWidth ||
+        0;
+      const naturalHeight =
+        imgData.dimensions?.natural?.height ||
+        imgData.element?.naturalHeight ||
+        0;
+      const displayWidth =
+        imgData.dimensions?.display?.width || imgData.element?.width || 0;
+      const displayHeight =
+        imgData.dimensions?.display?.height || imgData.element?.height || 0;
 
       if (naturalWidth > displayWidth * 2) {
         recommendations.push({
           type: "resize",
           priority: "high",
           icon: "🔍",
-          message: `Resize from ${naturalWidth}×${naturalHeight} to ~${Math.round(displayWidth)}×${Math.round(displayHeight)}`,
-          impact: "High"
+          message: `Resize from ${naturalWidth}×${naturalHeight} to ~${Math.round(
+            displayWidth
+          )}×${Math.round(displayHeight)}`,
+          impact: "High",
         });
       }
     }
@@ -918,7 +1146,7 @@
         priority: size > 500 * 1024 ? "critical" : "medium",
         icon: "⚙️",
         message: `Compress image to under ${target}`,
-        impact: size > 500 * 1024 ? "Critical" : "Medium"
+        impact: size > 500 * 1024 ? "Critical" : "Medium",
       });
     }
 
@@ -948,7 +1176,9 @@
     `;
 
     const opt = getOptimizationLevel(size);
-    const format = (imgData.src.split(".").pop().split("?")[0] || "").toLowerCase();
+    const format = (
+      imgData.src.split(".").pop().split("?")[0] || ""
+    ).toLowerCase();
 
     modal.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
@@ -972,8 +1202,12 @@
             : ""
         }
 
-        <div style="margin-bottom: 16px; padding: 12px; background:${opt.bgColor}; border-left: 4px solid ${opt.color}; border-radius: 8px;">
-          <div style="font-size:12px; font-weight:700; color:${opt.color}; margin-bottom: 8px; text-transform: uppercase;">
+        <div style="margin-bottom: 16px; padding: 12px; background:${
+          opt.bgColor
+        }; border-left: 4px solid ${opt.color}; border-radius: 8px;">
+          <div style="font-size:12px; font-weight:700; color:${
+            opt.color
+          }; margin-bottom: 8px; text-transform: uppercase;">
             ${opt.level} Priority
           </div>
           <div style="font-size:11px; color:#666; word-break: break-all;">
@@ -984,11 +1218,15 @@
         <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; margin-bottom:16px;">
           <div style="padding:12px; background:rgba(0,0,0,0.03); border-radius:8px;">
             <div style="font-size:10px; color:#999; margin-bottom:4px;">📦 File Size</div>
-            <div style="font-size:18px; font-weight:700; color:#19325d;">${formatBytes(size)}</div>
+            <div style="font-size:18px; font-weight:700; color:#19325d;">${formatBytes(
+              size
+            )}</div>
           </div>
           <div style="padding:12px; background:rgba(0,0,0,0.03); border-radius:8px;">
             <div style="font-size:10px; color:#999; margin-bottom:4px;">🖼️ Format</div>
-            <div style="font-size:18px; font-weight:700; color:#19325d; text-transform: uppercase;">${format || "unknown"}</div>
+            <div style="font-size:18px; font-weight:700; color:#19325d; text-transform: uppercase;">${
+              format || "unknown"
+            }</div>
           </div>
         </div>
 
@@ -999,13 +1237,17 @@
             <div style="padding:12px; background:rgba(0,0,0,0.03); border-radius:8px;">
               <div style="font-size:10px; color:#999; margin-bottom:4px;">📐 Natural Size</div>
               <div style="font-size:14px; font-weight:700; color:#19325d;">
-                ${imgData.dimensions.natural?.width || "-"} × ${imgData.dimensions.natural?.height || "-"}px
+                ${imgData.dimensions.natural?.width || "-"} × ${
+                imgData.dimensions.natural?.height || "-"
+              }px
               </div>
             </div>
             <div style="padding:12px; background:rgba(0,0,0,0.03); border-radius:8px;">
               <div style="font-size:10px; color:#999; margin-bottom:4px;">📏 Display Size</div>
               <div style="font-size:14px; font-weight:700; color:#19325d;">
-                ${imgData.dimensions.display?.width || "-"} × ${imgData.dimensions.display?.height || "-"}px
+                ${imgData.dimensions.display?.width || "-"} × ${
+                imgData.dimensions.display?.height || "-"
+              }px
               </div>
             </div>
           </div>
@@ -1026,7 +1268,13 @@
                   ${rec.icon || "•"} ${rec.message}
                 </div>
                 <div style="font-size:10px; color:#999;">
-                  <span class="spa-badge" style="background:${rec.priority === "critical" || rec.priority === "high" ? "#e74c3c" : rec.priority === "medium" ? "#f39c12" : "#3498db"}; color:white;">
+                  <span class="spa-badge" style="background:${
+                    rec.priority === "critical" || rec.priority === "high"
+                      ? "#e74c3c"
+                      : rec.priority === "medium"
+                      ? "#f39c12"
+                      : "#3498db"
+                  }; color:white;">
                     ${rec.impact || "Low"} Impact
                   </span>
                 </div>
@@ -1051,7 +1299,9 @@
 
       <div id="cropTab" class="spa-tab-content">
         <div class="spa-crop-container" id="cropContainer">
-          <img src="${imgData.src}" class="spa-crop-image" id="cropImage" alt="Crop Preview">
+          <img src="${
+            imgData.src
+          }" class="spa-crop-image" id="cropImage" alt="Crop Preview">
           <div class="spa-crop-box" id="cropBox" style="left:10%; top:10%; width:80%; height:80%;">
             <div class="spa-crop-handle nw"></div>
             <div class="spa-crop-handle ne"></div>
@@ -1129,10 +1379,12 @@
       btn.addEventListener("click", () => document.body.removeChild(backdrop));
     });
 
-    modal.querySelector(".compress-from-info")?.addEventListener("click", () => {
-      document.body.removeChild(backdrop);
-      showCompressionModal(imgData);
-    });
+    modal
+      .querySelector(".compress-from-info")
+      ?.addEventListener("click", () => {
+        document.body.removeChild(backdrop);
+        showCompressionModal(imgData);
+      });
 
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) document.body.removeChild(backdrop);
@@ -1180,8 +1432,12 @@
       const scaleX = naturalWidth / containerRect.width;
       const scaleY = naturalHeight / containerRect.height;
 
-      widthInput.value = Math.round((cropBoxRect.width / containerRect.width) * naturalWidth);
-      heightInput.value = Math.round((cropBoxRect.height / containerRect.height) * naturalHeight);
+      widthInput.value = Math.round(
+        (cropBoxRect.width / containerRect.width) * naturalWidth
+      );
+      heightInput.value = Math.round(
+        (cropBoxRect.height / containerRect.height) * naturalHeight
+      );
     };
 
     // Crop box dragging
@@ -1219,8 +1475,14 @@
         let newLeft = startLeft + deltaX;
         let newTop = startTop + deltaY;
 
-        newLeft = Math.max(0, Math.min(newLeft, containerRect.width - boxRect.width));
-        newTop = Math.max(0, Math.min(newTop, containerRect.height - boxRect.height));
+        newLeft = Math.max(
+          0,
+          Math.min(newLeft, containerRect.width - boxRect.width)
+        );
+        newTop = Math.max(
+          0,
+          Math.min(newTop, containerRect.height - boxRect.height)
+        );
 
         cropBox.style.left = `${newLeft}px`;
         cropBox.style.top = `${newTop}px`;
@@ -1239,21 +1501,29 @@
         switch (resizeHandle) {
           case "se":
             newWidth = Math.max(50, startWidth + deltaX);
-            newHeight = locked ? newWidth / currentRatio : Math.max(50, startHeight + deltaY);
+            newHeight = locked
+              ? newWidth / currentRatio
+              : Math.max(50, startHeight + deltaY);
             break;
           case "sw":
             newWidth = Math.max(50, startWidth - deltaX);
-            newHeight = locked ? newWidth / currentRatio : Math.max(50, startHeight + deltaY);
+            newHeight = locked
+              ? newWidth / currentRatio
+              : Math.max(50, startHeight + deltaY);
             newLeft = startLeft - (newWidth - startWidth);
             break;
           case "ne":
             newWidth = Math.max(50, startWidth + deltaX);
-            newHeight = locked ? newWidth / currentRatio : Math.max(50, startHeight - deltaY);
+            newHeight = locked
+              ? newWidth / currentRatio
+              : Math.max(50, startHeight - deltaY);
             newTop = startTop - (newHeight - startHeight);
             break;
           case "nw":
             newWidth = Math.max(50, startWidth - deltaX);
-            newHeight = locked ? newWidth / currentRatio : Math.max(50, startHeight - deltaY);
+            newHeight = locked
+              ? newWidth / currentRatio
+              : Math.max(50, startHeight - deltaY);
             newLeft = startLeft - (newWidth - startWidth);
             newTop = startTop - (newHeight - startHeight);
             break;
@@ -1399,7 +1669,9 @@
 
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
-          const filename = (imgData.src.split("/").pop() || "image").split("?")[0].replace(/\.[^.]*$/, "");
+          const filename = (imgData.src.split("/").pop() || "image")
+            .split("?")[0]
+            .replace(/\.[^.]*$/, "");
           a.href = url;
           a.download = `cropped-${filename}.png`;
           document.body.appendChild(a);
@@ -1410,7 +1682,10 @@
         }, "image/png");
       } catch (error) {
         console.error("Crop download error:", error);
-        showToast("Failed to download cropped image. CORS restriction may apply.", "error");
+        showToast(
+          "Failed to download cropped image. CORS restriction may apply.",
+          "error"
+        );
       }
     });
 
@@ -1467,7 +1742,7 @@
 
           try {
             await navigator.clipboard.write([
-              new ClipboardItem({ "image/png": blob })
+              new ClipboardItem({ "image/png": blob }),
             ]);
             showToast("Cropped image copied to clipboard!", "success");
           } catch (clipError) {
@@ -1487,14 +1762,18 @@
 
   function createImageOverlay(imgData, size, index) {
     const opt = getOptimizationLevel(size);
-    const format = (imgData.src.split(".").pop().split("?")[0] || "").toLowerCase();
+    const format = (
+      imgData.src.split(".").pop().split("?")[0] || ""
+    ).toLowerCase();
     const recommendations = getImageRecommendations(imgData, size, format);
 
     const rect = imgData.element.getBoundingClientRect();
     const overlayId = generateId();
 
     const overlay = document.createElement("div");
-    overlay.className = `spa-image-overlay ${opt.level === "CRITICAL" ? "critical" : ""}`;
+    overlay.className = `spa-image-overlay ${
+      opt.level === "CRITICAL" ? "critical" : ""
+    }`;
     overlay.dataset.overlayId = overlayId;
     overlay.dataset.level = opt.level;
     overlay.style.cssText = `
@@ -1503,7 +1782,9 @@
       left: ${window.scrollX + rect.left}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
-      border: 3px ${imgData.type === "background" ? "dashed" : "solid"} ${opt.color};
+      border: 3px ${imgData.type === "background" ? "dashed" : "solid"} ${
+      opt.color
+    };
       background: ${opt.bgColor};
       z-index: 9998;
       pointer-events: none;
@@ -1531,7 +1812,9 @@
 
     const lazyIcon = imgData.lazyLoaded ? " 🔄" : "";
     const responsiveIcon = imgData.responsive ? " 📱" : "";
-    label.textContent = `${imgData.type} • ${formatBytes(size)} • ${format.toUpperCase()}${lazyIcon}${responsiveIcon}`;
+    label.textContent = `${imgData.type} • ${formatBytes(
+      size
+    )} • ${format.toUpperCase()}${lazyIcon}${responsiveIcon}`;
 
     const actionsContainer = document.createElement("div");
     actionsContainer.style.cssText = `
@@ -1620,7 +1903,9 @@
 
   function getAllVideos() {
     const videos = [];
-    const videoElements = document.querySelectorAll("video, iframe[src*='youtube'], iframe[src*='vimeo']");
+    const videoElements = document.querySelectorAll(
+      "video, iframe[src*='youtube'], iframe[src*='vimeo']"
+    );
 
     videoElements.forEach((el) => {
       let type = "html5";
@@ -1632,7 +1917,7 @@
         src = el.getAttribute("src") || "";
         autoplay = /\bautoplay=1\b/i.test(src);
       } else {
-        src = el.currentSrc || el.src || (el.querySelector("source")?.src || "");
+        src = el.currentSrc || el.src || el.querySelector("source")?.src || "";
         autoplay = el.hasAttribute("autoplay");
       }
 
@@ -1644,13 +1929,16 @@
         src,
         type,
         autoplay,
-        hasPoster: el.tagName.toLowerCase() === "video" ? el.hasAttribute("poster") : false,
+        hasPoster:
+          el.tagName.toLowerCase() === "video"
+            ? el.hasAttribute("poster")
+            : false,
         dimensions: {
           display: {
             width: rect.width,
-            height: rect.height
-          }
-        }
+            height: rect.height,
+          },
+        },
       });
     });
 
@@ -1695,7 +1983,9 @@
       pointer-events: none;
     `;
 
-    label.textContent = `🎥 ${video.type === "embedded" ? "Embedded Video" : "HTML5 Video"}${video.autoplay ? " • autoplay" : ""}`;
+    label.textContent = `🎥 ${
+      video.type === "embedded" ? "Embedded Video" : "HTML5 Video"
+    }${video.autoplay ? " • autoplay" : ""}`;
 
     overlay.appendChild(label);
     document.body.appendChild(overlay);
@@ -1743,13 +2033,13 @@
         dimensions: {
           natural: {
             width: img.naturalWidth,
-            height: img.naturalHeight
+            height: img.naturalHeight,
           },
           display: {
             width: img.width,
-            height: img.height
-          }
-        }
+            height: img.height,
+          },
+        },
       };
 
       if (isVisible) {
@@ -1762,7 +2052,7 @@
     return {
       visible,
       hidden,
-      all: [...visible, ...hidden]
+      all: [...visible, ...hidden],
     };
   }
 
@@ -1789,9 +2079,9 @@
             dimensions: {
               display: {
                 width: rect.width,
-                height: rect.height
-              }
-            }
+                height: rect.height,
+              },
+            },
           });
         });
       }
@@ -1803,7 +2093,10 @@
   async function getImageSize(imgSrc, retries = 3) {
     for (let i = 0; i < retries; i++) {
       try {
-        const response = await fetch(imgSrc, { method: "HEAD", cache: "force-cache" });
+        const response = await fetch(imgSrc, {
+          method: "HEAD",
+          cache: "force-cache",
+        });
         const contentLength = response.headers.get("content-length");
         if (contentLength) {
           return parseInt(contentLength, 10);
@@ -1836,7 +2129,7 @@
       noResponsive: 0,
       oversizedImages: 0,
       autoplayVideos: 0,
-      totalSize: 0
+      totalSize: 0,
     };
 
     images.forEach((img) => {
@@ -1865,8 +2158,10 @@
       }
 
       if (img.type === "img") {
-        const naturalWidth = img.dimensions?.natural?.width || img.element?.naturalWidth || 0;
-        const displayWidth = img.dimensions?.display?.width || img.element?.width || 0;
+        const naturalWidth =
+          img.dimensions?.natural?.width || img.element?.naturalWidth || 0;
+        const displayWidth =
+          img.dimensions?.display?.width || img.element?.width || 0;
         if (naturalWidth > displayWidth * 2) {
           breakdown.oversizedImages++;
           score -= 3;
@@ -1882,12 +2177,21 @@
     });
 
     const finalScore = Math.max(0, Math.min(100, score));
-    const grade = finalScore >= 90 ? "A" : finalScore >= 80 ? "B" : finalScore >= 70 ? "C" : finalScore >= 60 ? "D" : "F";
+    const grade =
+      finalScore >= 90
+        ? "A"
+        : finalScore >= 80
+        ? "B"
+        : finalScore >= 70
+        ? "C"
+        : finalScore >= 60
+        ? "D"
+        : "F";
 
     return {
       score: finalScore,
       breakdown,
-      grade
+      grade,
     };
   }
   // ============================================================================
@@ -1895,7 +2199,7 @@
   // Modify this section to change analysis flow
   // ============================================================================
 
-    function createProgressBar() {
+  function createProgressBar() {
     const container = document.createElement("div");
     container.style.cssText = `
       position: fixed;
@@ -1939,7 +2243,6 @@
     return container;
   }
 
-
   function updateProgress(progressBar, percent) {
     const bar = progressBar.querySelector(".spa-progress-bar");
     const text = progressBar.querySelector("#progressText");
@@ -1957,7 +2260,7 @@
     if (analysisActive) return;
     analysisActive = true;
 
-      // ← ADD THIS LINE
+    // ← ADD THIS LINE
     analysisCancelled = false;
 
     overlays = [];
@@ -1982,7 +2285,7 @@
         const imgObj = images.all[i];
         const imgEl = imgObj.element;
         updateProgress(progressBar, ((analyzed + 1) / (total || 1)) * 100);
-          // ← ADD THIS CANCEL CHECK
+        // ← ADD THIS CANCEL CHECK
         if (analysisCancelled) {
           removeProgress(progressBar);
           showToast("❌ Analysis cancelled", "warning");
@@ -2021,7 +2324,7 @@
         const bg = backgrounds[i];
         updateProgress(progressBar, ((analyzed + 1) / (total || 1)) * 100);
 
-          // ← ADD THIS CANCEL CHECK
+        // ← ADD THIS CANCEL CHECK
         if (analysisCancelled) {
           removeProgress(progressBar);
           showToast("❌ Analysis cancelled", "warning");
@@ -2044,7 +2347,11 @@
           continue;
         }
 
-        const { overlay, overlayId } = createImageOverlay(data, size, images.all.length + i);
+        const { overlay, overlayId } = createImageOverlay(
+          data,
+          size,
+          images.all.length + i
+        );
         overlays.push({ overlay, element: bg.element, overlayId, data });
         analyzed++;
       }
@@ -2067,7 +2374,7 @@
         date: new Date().toISOString(),
         score: performanceScore,
         images: imageData.length,
-        videos: videoData.length
+        videos: videoData.length,
       });
 
       GM_setValue("analysisHistory", analysisHistory);
@@ -2079,12 +2386,11 @@
       setupResizeObserver();
       showToast("✅ Analysis complete!", "success");
 
-
       analysisHistory.push({
         date: new Date().toISOString(),
         score: performanceScore,
         images: imageData.length,
-        videos: videoData.length
+        videos: videoData.length,
       });
 
       GM_setValue("analysisHistory", analysisHistory);
@@ -2107,7 +2413,6 @@
           window.spaToolbarOpen = false;
         }
       }
-
     } catch (e) {
       console.error("Analysis failed:", e);
       try {
@@ -2228,10 +2533,10 @@
     document.body.appendChild(backdrop);
 
     const formatRadios = modal.querySelectorAll('input[name="exportFormat"]');
-    formatRadios.forEach(radio => {
+    formatRadios.forEach((radio) => {
       radio.addEventListener("change", (e) => {
-        const labels = modal.querySelectorAll('label');
-        labels.forEach(l => {
+        const labels = modal.querySelectorAll("label");
+        labels.forEach((l) => {
           l.style.border = "2px solid rgba(0,0,0,0.1)";
           l.style.background = "white";
         });
@@ -2249,7 +2554,9 @@
     });
 
     modal.querySelector("#proceedExportBtn").addEventListener("click", () => {
-      const selectedFormat = modal.querySelector('input[name="exportFormat"]:checked').value;
+      const selectedFormat = modal.querySelector(
+        'input[name="exportFormat"]:checked'
+      ).value;
       document.body.removeChild(backdrop);
       if (selectedFormat === "html") {
         exportAsHTML(scoreData);
@@ -2267,13 +2574,24 @@
     const timestamp = new Date().toLocaleString();
     const totalSavings = imageData.reduce((sum, img) => {
       const opt = getOptimizationLevel(img.size);
-      const savings = opt.level === "CRITICAL" ? img.size * 0.6 : opt.level === "WARNING" ? img.size * 0.4 : 0;
+      const savings =
+        opt.level === "CRITICAL"
+          ? img.size * 0.6
+          : opt.level === "WARNING"
+          ? img.size * 0.4
+          : 0;
       return sum + savings;
     }, 0);
 
-    const criticalCount = imageData.filter(img => getOptimizationLevel(img.size).level === "CRITICAL").length;
-    const warningCount = imageData.filter(img => getOptimizationLevel(img.size).level === "WARNING").length;
-    const noticeCount = imageData.filter(img => getOptimizationLevel(img.size).level === "NOTICE").length;
+    const criticalCount = imageData.filter(
+      (img) => getOptimizationLevel(img.size).level === "CRITICAL"
+    ).length;
+    const warningCount = imageData.filter(
+      (img) => getOptimizationLevel(img.size).level === "WARNING"
+    ).length;
+    const noticeCount = imageData.filter(
+      (img) => getOptimizationLevel(img.size).level === "NOTICE"
+    ).length;
 
     const html = `
       <!DOCTYPE html>
@@ -2322,7 +2640,9 @@
 
           <div class="score-card">
             <div class="card success">
-              <div class="card-value" style="color: #2ecc71;">${scoreData.score}</div>
+              <div class="card-value" style="color: #2ecc71;">${
+                scoreData.score
+              }</div>
               <div class="card-label">Performance Score</div>
             </div>
             <div class="card critical">
@@ -2334,7 +2654,9 @@
               <div class="card-label">Warnings</div>
             </div>
             <div class="card notice">
-              <div class="card-value" style="color: #3498db;">${formatBytes(totalSavings)}</div>
+              <div class="card-value" style="color: #3498db;">${formatBytes(
+                totalSavings
+              )}</div>
               <div class="card-label">Potential Savings</div>
             </div>
           </div>
@@ -2342,7 +2664,9 @@
           <div class="section">
             <div class="section-title">📌 Key Recommendations</div>
             <div class="recommendation">
-              <strong>Priority 1:</strong> Compress ${criticalCount} critical images - potential savings of ${formatBytes(totalSavings)}
+              <strong>Priority 1:</strong> Compress ${criticalCount} critical images - potential savings of ${formatBytes(
+      totalSavings
+    )}
             </div>
             <div class="recommendation">
               <strong>Priority 2:</strong> Convert ${warningCount} images to WebP format for better compression
@@ -2365,16 +2689,24 @@
               </thead>
               <tbody>
                 ${imageData
-                  .filter(img => getOptimizationLevel(img.size).level === "CRITICAL")
+                  .filter(
+                    (img) => getOptimizationLevel(img.size).level === "CRITICAL"
+                  )
                   .slice(0, 10)
-                  .map(img => `
+                  .map(
+                    (img) => `
                     <tr>
-                      <td style="max-width: 300px; word-break: break-all; font-size: 12px;">${img.src.substring(0, 80)}...</td>
+                      <td style="max-width: 300px; word-break: break-all; font-size: 12px;">${img.src.substring(
+                        0,
+                        80
+                      )}...</td>
                       <td>${formatBytes(img.size)}</td>
                       <td>Compress & convert to WebP</td>
                       <td><span class="badge badge-critical">Critical</span></td>
                     </tr>
-                  `).join("")}
+                  `
+                  )
+                  .join("")}
               </tbody>
             </table>
           </div>
@@ -2392,16 +2724,24 @@
               </thead>
               <tbody>
                 ${imageData
-                  .filter(img => getOptimizationLevel(img.size).level === "WARNING")
+                  .filter(
+                    (img) => getOptimizationLevel(img.size).level === "WARNING"
+                  )
                   .slice(0, 10)
-                  .map(img => `
+                  .map(
+                    (img) => `
                     <tr>
-                      <td style="max-width: 300px; word-break: break-all; font-size: 12px;">${img.src.substring(0, 80)}...</td>
+                      <td style="max-width: 300px; word-break: break-all; font-size: 12px;">${img.src.substring(
+                        0,
+                        80
+                      )}...</td>
                       <td>${formatBytes(img.size)}</td>
                       <td>Optimize & consider WebP</td>
                       <td><span class="badge badge-warning">Warning</span></td>
                     </tr>
-                  `).join("")}
+                  `
+                  )
+                  .join("")}
               </tbody>
             </table>
           </div>
@@ -2435,30 +2775,44 @@
     csv += "SUMMARY\n";
     csv += `Performance Score,${scoreData.score}\n`;
     csv += `Total Images,${imageData.length}\n`;
-    csv += `Critical Images,${imageData.filter(img => getOptimizationLevel(img.size).level === "CRITICAL").length}\n`;
-    csv += `Warning Images,${imageData.filter(img => getOptimizationLevel(img.size).level === "WARNING").length}\n\n`;
+    csv += `Critical Images,${
+      imageData.filter(
+        (img) => getOptimizationLevel(img.size).level === "CRITICAL"
+      ).length
+    }\n`;
+    csv += `Warning Images,${
+      imageData.filter(
+        (img) => getOptimizationLevel(img.size).level === "WARNING"
+      ).length
+    }\n\n`;
 
     csv += "CRITICAL IMAGES\n";
     csv += "Image URL,Size (Bytes),Size (MB),Priority\n";
     imageData
-      .filter(img => getOptimizationLevel(img.size).level === "CRITICAL")
-      .forEach(img => {
-        csv += `"${img.src}",${img.size},${(img.size / 1024 / 1024).toFixed(2)},CRITICAL\n`;
+      .filter((img) => getOptimizationLevel(img.size).level === "CRITICAL")
+      .forEach((img) => {
+        csv += `"${img.src}",${img.size},${(img.size / 1024 / 1024).toFixed(
+          2
+        )},CRITICAL\n`;
       });
 
     csv += "\nWARNING IMAGES\n";
     csv += "Image URL,Size (Bytes),Size (MB),Priority\n";
     imageData
-      .filter(img => getOptimizationLevel(img.size).level === "WARNING")
-      .forEach(img => {
-        csv += `"${img.src}",${img.size},${(img.size / 1024 / 1024).toFixed(2)},WARNING\n`;
+      .filter((img) => getOptimizationLevel(img.size).level === "WARNING")
+      .forEach((img) => {
+        csv += `"${img.src}",${img.size},${(img.size / 1024 / 1024).toFixed(
+          2
+        )},WARNING\n`;
       });
 
     csv += "\nALL IMAGES\n";
     csv += "Image URL,Size (MB),Priority\n";
-    imageData.forEach(img => {
+    imageData.forEach((img) => {
       const opt = getOptimizationLevel(img.size);
-      csv += `"${img.src}",${(img.size / 1024 / 1024).toFixed(2)},${opt.level}\n`;
+      csv += `"${img.src}",${(img.size / 1024 / 1024).toFixed(2)},${
+        opt.level
+      }\n`;
     });
 
     const blob = new Blob([csv], { type: "text/csv" });
@@ -2473,8 +2827,7 @@
     showToast("✅ Excel report exported successfully!", "success");
   }
 
-
-    async function bulkCompressCritical() {
+  async function bulkCompressCritical() {
     const criticalImages = imageData.filter((img) => {
       return getOptimizationLevel(img.size || 0).level === "CRITICAL";
     });
@@ -2488,7 +2841,7 @@
     showBulkCompressionModal(criticalImages);
   }
 
-    // ============================================================================
+  // ============================================================================
   // BLOCK ANALYSIS FEATURE
   // ============================================================================
 
@@ -2519,7 +2872,9 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
         <div>
           <h2 style="margin:0 0 4px 0; font-size:22px; color:#19325d;">🔍 Block Analysis</h2>
-          <div style="font-size:12px; color:#666;">Found ${blocks.length} block(s) to analyze</div>
+          <div style="font-size:12px; color:#666;">Found ${
+            blocks.length
+          } block(s) to analyze</div>
         </div>
         <button id="closeBlockModal" style="background:none; border:none; font-size:28px; cursor:pointer; color:#999; transition: color 0.2s; line-height:1;" onmouseover="this.style.color='#e74c3c'" onmouseout="this.style.color='#999'">✕</button>
       </div>
@@ -2530,7 +2885,11 @@
           <label style="font-size:12px; font-weight:700; color:#19325d; display:block; margin-bottom:8px;">📦 Select Block/Section</label>
           <select id="blockSelector" style="width:100%; padding:12px; border:2px solid #fb741c; border-radius:8px; font-size:13px; cursor:pointer; background:white; color:#19325d; font-weight:600;">
             <option value="">-- Choose a block --</option>
-            ${blocks.map((block, idx) => `<option value="${idx}">${block.name}</option>`).join("")}
+            ${blocks
+              .map(
+                (block, idx) => `<option value="${idx}">${block.name}</option>`
+              )
+              .join("")}
           </select>
         </div>
         <div style="display:flex; flex-direction:column; justify-content:flex-end;">
@@ -2595,7 +2954,7 @@
     });
   }
 
-    function displayBlockAnalysisResults(modal, analysis, resultsContainer) {
+  function displayBlockAnalysisResults(modal, analysis, resultsContainer) {
     const formats = detectFormatSupport();
     const formatOptions = [];
     if (formats.webp) formatOptions.push("webp");
@@ -2609,25 +2968,42 @@
 
     // SIMPLIFIED HTML - No inline script tags or complex interpolations
     let imageHtml = "";
-    const sortedImages = analysis.images.sort((a, b) => (b.size || 0) - (a.size || 0));
+    const sortedImages = analysis.images.sort(
+      (a, b) => (b.size || 0) - (a.size || 0)
+    );
 
     sortedImages.forEach((img, i) => {
-      const format = (img.src.split(".").pop().split("?")[0] || "").toLowerCase();
+      const format = (
+        img.src.split(".").pop().split("?")[0] || ""
+      ).toLowerCase();
       const badgeColors = {
-        "CRITICAL": { bg: "rgba(231,76,60,0.15)", color: "#e74c3c", icon: "🔴" },
-        "WARNING": { bg: "rgba(243,156,18,0.15)", color: "#f39c12", icon: "🟠" },
-        "NOTICE": { bg: "rgba(52,152,219,0.15)", color: "#3498db", icon: "🔵" },
-        "GOOD": { bg: "rgba(46,204,113,0.15)", color: "#2ecc71", icon: "🟢" }
+        CRITICAL: { bg: "rgba(231,76,60,0.15)", color: "#e74c3c", icon: "🔴" },
+        WARNING: { bg: "rgba(243,156,18,0.15)", color: "#f39c12", icon: "🟠" },
+        NOTICE: { bg: "rgba(52,152,219,0.15)", color: "#3498db", icon: "🔵" },
+        GOOD: { bg: "rgba(46,204,113,0.15)", color: "#2ecc71", icon: "🟢" },
       };
-      const badgeStyle = badgeColors[img.optimization.level] || badgeColors["GOOD"];
+      const badgeStyle =
+        badgeColors[img.optimization.level] || badgeColors["GOOD"];
 
       imageHtml += `
-        <div style="display:grid; grid-template-columns:30px 1fr auto; gap:12px; align-items:center; padding:12px; border:1px solid ${badgeStyle.color}33; border-left:3px solid ${badgeStyle.color}; border-radius:8px; background:${badgeStyle.bg};">
+        <div style="display:grid; grid-template-columns:30px 1fr auto; gap:12px; align-items:center; padding:12px; border:1px solid ${
+          badgeStyle.color
+        }33; border-left:3px solid ${
+        badgeStyle.color
+      }; border-radius:8px; background:${badgeStyle.bg};">
           <input type="checkbox" class="block-image-checkbox" data-index="${i}" style="width:18px; height:18px; cursor:pointer;">
           <div style="min-width:0;">
-            <div style="font-size:11px; font-weight:600; color:${badgeStyle.color}; text-transform:uppercase; margin-bottom:3px;">${img.optimization.level}</div>
-            <div style="font-size:10px; color:#19325d; word-break:break-all; margin-bottom:2px;">${img.src}</div>
-            <div style="font-size:9px; color:#999;">${formatBytes(img.size)}</div>
+            <div style="font-size:11px; font-weight:600; color:${
+              badgeStyle.color
+            }; text-transform:uppercase; margin-bottom:3px;">${
+        img.optimization.level
+      }</div>
+            <div style="font-size:10px; color:#19325d; word-break:break-all; margin-bottom:2px;">${
+              img.src
+            }</div>
+            <div style="font-size:9px; color:#999;">${formatBytes(
+              img.size
+            )}</div>
           </div>
           <div style="font-size:20px;">${badgeStyle.icon}</div>
         </div>
@@ -2637,7 +3013,11 @@
     let formatButtonsHtml = "";
     formatOptions.forEach((fmt, i) => {
       formatButtonsHtml += `
-        <button class="block-format-btn spa-btn" data-format="${fmt}" style="padding:8px; border:2px solid ${i === 0 ? '#fb741c' : 'rgba(0,0,0,0.1)'}; background:${i === 0 ? 'rgba(251,116,28,0.1)' : 'white'}; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; text-transform:uppercase;">
+        <button class="block-format-btn spa-btn" data-format="${fmt}" style="padding:8px; border:2px solid ${
+        i === 0 ? "#fb741c" : "rgba(0,0,0,0.1)"
+      }; background:${
+        i === 0 ? "rgba(251,116,28,0.1)" : "white"
+      }; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; text-transform:uppercase;">
           ${fmt}
         </button>
       `;
@@ -2647,11 +3027,15 @@
       <div style="background:white; border-radius:12px; padding:16px; margin-bottom:20px; border-left:4px solid ${scoreColor};">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div>
-            <div style="font-size:12px; color:#666; margin-bottom:4px;">Block: ${analysis.blockName}</div>
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Block: ${
+              analysis.blockName
+            }</div>
             <div style="font-size:14px; font-weight:700; color:#19325d;">Performance Score</div>
           </div>
           <div style="text-align:center;">
-            <div style="font-size:40px; font-weight:800; color:${scoreColor};">${analysis.score}</div>
+            <div style="font-size:40px; font-weight:800; color:${scoreColor};">${
+      analysis.score
+    }</div>
             <div style="font-size:12px; color:#999;">/100</div>
           </div>
         </div>
@@ -2659,23 +3043,36 @@
         <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid rgba(0,0,0,0.08);">
           <div style="text-align:center;">
             <div style="font-size:9px; color:#999;">Total</div>
-            <div style="font-size:16px; font-weight:700; color:#19325d;">${analysis.images.length}</div>
+            <div style="font-size:16px; font-weight:700; color:#19325d;">${
+              analysis.images.length
+            }</div>
           </div>
           <div style="text-align:center; background:rgba(231,76,60,0.1); padding:8px; border-radius:6px;">
             <div style="font-size:9px; color:#e74c3c;">Critical</div>
-            <div style="font-size:16px; font-weight:700; color:#e74c3c;">${analysis.breakdown.criticalImages || 0}</div>
+            <div style="font-size:16px; font-weight:700; color:#e74c3c;">${
+              analysis.breakdown.criticalImages || 0
+            }</div>
           </div>
           <div style="text-align:center; background:rgba(243,156,18,0.1); padding:8px; border-radius:6px;">
             <div style="font-size:9px; color:#f39c12;">Warning</div>
-            <div style="font-size:16px; font-weight:700; color:#f39c12;">${analysis.breakdown.warningImages || 0}</div>
+            <div style="font-size:16px; font-weight:700; color:#f39c12;">${
+              analysis.breakdown.warningImages || 0
+            }</div>
           </div>
           <div style="text-align:center; background:rgba(52,152,219,0.1); padding:8px; border-radius:6px;">
             <div style="font-size:9px; color:#3498db;">Notice</div>
-            <div style="font-size:16px; font-weight:700; color:#3498db;">${analysis.breakdown.noticeImages || 0}</div>
+            <div style="font-size:16px; font-weight:700; color:#3498db;">${
+              analysis.breakdown.noticeImages || 0
+            }</div>
           </div>
           <div style="text-align:center; background:rgba(46,204,113,0.1); padding:8px; border-radius:6px;">
             <div style="font-size:9px; color:#2ecc71;">Good</div>
-            <div style="font-size:16px; font-weight:700; color:#2ecc71;">${(analysis.images.length - (analysis.breakdown.criticalImages || 0) - (analysis.breakdown.warningImages || 0) - (analysis.breakdown.noticeImages || 0)) || 0}</div>
+            <div style="font-size:16px; font-weight:700; color:#2ecc71;">${
+              analysis.images.length -
+                (analysis.breakdown.criticalImages || 0) -
+                (analysis.breakdown.warningImages || 0) -
+                (analysis.breakdown.noticeImages || 0) || 0
+            }</div>
           </div>
         </div>
       </div>
@@ -2692,7 +3089,9 @@
 
         <div>
           <label style="font-size:12px; font-weight:600; color:#19325d; display:block; margin-bottom:8px;">Format</label>
-          <div style="display:grid; grid-template-columns:repeat(${formatOptions.length}, 1fr); gap:6px;">
+          <div style="display:grid; grid-template-columns:repeat(${
+            formatOptions.length
+          }, 1fr); gap:6px;">
             ${formatButtonsHtml}
           </div>
         </div>
@@ -2700,7 +3099,9 @@
 
       <div style="margin-bottom:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <div style="font-size:13px; font-weight:700; color:#19325d;">📷 Images in Block (${analysis.images.length})</div>
+          <div style="font-size:13px; font-weight:700; color:#19325d;">📷 Images in Block (${
+            analysis.images.length
+          })</div>
           <label style="font-size:11px; color:#19325d; cursor:pointer; font-weight:600;">
             <input type="checkbox" id="blockSelectAll" style="margin-right:6px; cursor:pointer;">
             Select All
@@ -2739,7 +3140,9 @@
     const qualitySlider = resultsContainer.querySelector("#blockQualitySlider");
     const qualityValue = resultsContainer.querySelector("#blockQualityValue");
     const selectAllCheckbox = resultsContainer.querySelector("#blockSelectAll");
-    const imageCheckboxes = resultsContainer.querySelectorAll(".block-image-checkbox");
+    const imageCheckboxes = resultsContainer.querySelectorAll(
+      ".block-image-checkbox"
+    );
     let selectedFormat = "jpeg";
 
     // Quality slider
@@ -2770,90 +3173,112 @@
     // Individual checkboxes
     imageCheckboxes.forEach((cb) => {
       cb.addEventListener("change", () => {
-        const allChecked = Array.from(imageCheckboxes).every(c => c.checked);
-        const someChecked = Array.from(imageCheckboxes).some(c => c.checked);
+        const allChecked = Array.from(imageCheckboxes).every((c) => c.checked);
+        const someChecked = Array.from(imageCheckboxes).some((c) => c.checked);
         selectAllCheckbox.checked = allChecked;
         selectAllCheckbox.indeterminate = someChecked && !allChecked;
       });
     });
 
     // Compress selected
-    resultsContainer.querySelector("#blockCompressSelectedBtn").addEventListener("click", async () => {
-      const selectedIndices = Array.from(imageCheckboxes)
-        .map((cb, i) => cb.checked ? i : -1)
-        .filter(i => i !== -1);
+    resultsContainer
+      .querySelector("#blockCompressSelectedBtn")
+      .addEventListener("click", async () => {
+        const selectedIndices = Array.from(imageCheckboxes)
+          .map((cb, i) => (cb.checked ? i : -1))
+          .filter((i) => i !== -1);
 
-      if (selectedIndices.length === 0) {
-        showToast("❌ Select images first", "warning");
-        return;
-      }
-
-      const sortedImages = analysis.images.sort((a, b) => (b.size || 0) - (a.size || 0));
-      const selectedImages = selectedIndices.map(i => sortedImages[i]);
-      const quality = parseInt(qualitySlider.value) / 100;
-      const progressSection = resultsContainer.querySelector("#blockCompressionProgress");
-      const progressBar = resultsContainer.querySelector("#blockProgressBar");
-      const progressText = resultsContainer.querySelector("#blockProgressText");
-      const compressBtn = resultsContainer.querySelector("#blockCompressSelectedBtn");
-
-      compressBtn.disabled = true;
-      progressSection.style.display = "block";
-
-      let successCount = 0;
-
-      for (let i = 0; i < selectedImages.length; i++) {
-        const img = selectedImages[i];
-        progressText.textContent = `${i + 1} / ${selectedImages.length}`;
-        progressBar.style.width = `${((i + 1) / selectedImages.length) * 100}%`;
-
-        try {
-          let loadedImage;
-          if (img.type === "img" && img.element) {
-            loadedImage = img.element;
-          } else {
-            loadedImage = await new Promise((resolve, reject) => {
-              const tempImg = new Image();
-              tempImg.crossOrigin = "anonymous";
-              tempImg.onload = () => resolve(tempImg);
-              tempImg.onerror = () => reject("Load failed");
-              tempImg.src = img.src;
-            });
-          }
-
-          const blob = await compressImage(loadedImage, quality, loadedImage.naturalWidth, loadedImage.naturalHeight, selectedFormat);
-
-          if (blob.size >= img.size && selectedFormat !== "jpeg") {
-            continue;
-          }
-
-          const filename = (img.src.split("/").pop() || "image").split("?")[0].replace(/\.[^.]*$/, "");
-          const ext = selectedFormat === "jpeg" ? "jpg" : selectedFormat;
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `compressed-${filename}.${ext}`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-
-          successCount++;
-          await new Promise((r) => setTimeout(r, 100));
-        } catch (error) {
-          console.error(`Failed: ${img.src}`, error);
+        if (selectedIndices.length === 0) {
+          showToast("❌ Select images first", "warning");
+          return;
         }
-      }
 
-      showToast(`✅ ${successCount} images downloaded!`, "success");
-      compressBtn.disabled = false;
-      progressSection.style.display = "none";
-    });
+        const sortedImages = analysis.images.sort(
+          (a, b) => (b.size || 0) - (a.size || 0)
+        );
+        const selectedImages = selectedIndices.map((i) => sortedImages[i]);
+        const quality = parseInt(qualitySlider.value) / 100;
+        const progressSection = resultsContainer.querySelector(
+          "#blockCompressionProgress"
+        );
+        const progressBar = resultsContainer.querySelector("#blockProgressBar");
+        const progressText =
+          resultsContainer.querySelector("#blockProgressText");
+        const compressBtn = resultsContainer.querySelector(
+          "#blockCompressSelectedBtn"
+        );
 
-    resultsContainer.querySelector("#blockCancelBtn").addEventListener("click", () => {
-      resultsContainer.parentElement.querySelector("#closeBlockModal")?.click();
-    });
+        compressBtn.disabled = true;
+        progressSection.style.display = "block";
+
+        let successCount = 0;
+
+        for (let i = 0; i < selectedImages.length; i++) {
+          const img = selectedImages[i];
+          progressText.textContent = `${i + 1} / ${selectedImages.length}`;
+          progressBar.style.width = `${
+            ((i + 1) / selectedImages.length) * 100
+          }%`;
+
+          try {
+            let loadedImage;
+            if (img.type === "img" && img.element) {
+              loadedImage = img.element;
+            } else {
+              loadedImage = await new Promise((resolve, reject) => {
+                const tempImg = new Image();
+                tempImg.crossOrigin = "anonymous";
+                tempImg.onload = () => resolve(tempImg);
+                tempImg.onerror = () => reject("Load failed");
+                tempImg.src = img.src;
+              });
+            }
+
+            const blob = await compressImage(
+              loadedImage,
+              quality,
+              loadedImage.naturalWidth,
+              loadedImage.naturalHeight,
+              selectedFormat
+            );
+
+            if (blob.size >= img.size && selectedFormat !== "jpeg") {
+              continue;
+            }
+
+            const filename = (img.src.split("/").pop() || "image")
+              .split("?")[0]
+              .replace(/\.[^.]*$/, "");
+            const ext = selectedFormat === "jpeg" ? "jpg" : selectedFormat;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `compressed-${filename}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            successCount++;
+            await new Promise((r) => setTimeout(r, 100));
+          } catch (error) {
+            console.error(`Failed: ${img.src}`, error);
+          }
+        }
+
+        showToast(`✅ ${successCount} images downloaded!`, "success");
+        compressBtn.disabled = false;
+        progressSection.style.display = "none";
+      });
+
+    resultsContainer
+      .querySelector("#blockCancelBtn")
+      .addEventListener("click", () => {
+        resultsContainer.parentElement
+          .querySelector("#closeBlockModal")
+          ?.click();
+      });
   }
-
 
   // NEW: Advanced Bulk Compression Modal
   function showBulkCompressionModal(images) {
@@ -2882,7 +3307,9 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
         <div>
           <h2 style="margin:0 0 4px 0; font-size:20px; color:#19325d;">🗜️ Bulk Compress Critical Images</h2>
-          <div style="font-size:12px; color:#666;">${images.length} critical images detected</div>
+          <div style="font-size:12px; color:#666;">${
+            images.length
+          } critical images detected</div>
         </div>
         <button class="close-bulk-modal" style="background:none; border:none; font-size:24px; cursor:pointer; color:#999; transition: color 0.2s;" onmouseover="this.style.color='#e74c3c'" onmouseout="this.style.color='#999'">✕</button>
       </div>
@@ -2900,9 +3327,13 @@
         <!-- Quality Slider -->
         <div style="margin-bottom:16px;">
           <label style="display:block; margin-bottom:8px; font-weight:600; font-size:12px; color:#19325d;">
-            Quality <span id="bulkQualityValue" style="color:#fb741c;">${userSettings.defaultQuality}</span>
+            Quality <span id="bulkQualityValue" style="color:#fb741c;">${
+              userSettings.defaultQuality
+            }</span>
           </label>
-          <input type="range" id="bulkQualitySlider" min="10" max="100" value="${userSettings.defaultQuality}" step="5"
+          <input type="range" id="bulkQualitySlider" min="10" max="100" value="${
+            userSettings.defaultQuality
+          }" step="5"
             style="width:100%; height:6px; border-radius:5px; outline:none; cursor:pointer;">
           <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:9px; color:#999;">
             <span>Low</span><span>Recommended</span><span>High</span>
@@ -2912,7 +3343,9 @@
         <!-- Format Selection -->
         <div style="margin-bottom:12px;">
           <label style="font-size:12px; font-weight:600; color:#19325d; display:block; margin-bottom:8px;">Output Format</label>
-          <div style="display:grid; grid-template-columns: repeat(${formatOptions.length + 1}, 1fr); gap:6px;">
+          <div style="display:grid; grid-template-columns: repeat(${
+            formatOptions.length + 1
+          }, 1fr); gap:6px;">
             <button class="bulk-format-btn spa-btn" data-format="keep-original" style="padding:8px; border:2px solid #fb741c; background:rgba(251,116,28,0.1); border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; text-transform:uppercase;">
               Keep Original
             </button>
@@ -2941,31 +3374,35 @@
         </div>
         <div id="bulkImageList" style="max-height:350px; overflow-y:auto; padding-right:8px;">
           ${images
-            .map(
-              (img, index) => {
-                const filename = img.src.split("/").pop().split("?")[0];
-                const format = (img.src.split(".").pop().split("?")[0] || "").toLowerCase();
-                return `
+            .map((img, index) => {
+              const filename = img.src.split("/").pop().split("?")[0];
+              const format = (
+                img.src.split(".").pop().split("?")[0] || ""
+              ).toLowerCase();
+              return `
                 <div class="spa-bulk-item" data-index="${index}">
                   <div class="spa-bulk-header">
                     <div style="display:flex; align-items:center; gap:10px; flex:1;">
                       <span class="spa-bulk-expand-icon">▶</span>
                       <div style="flex:1; min-width:0;">
                         <div style="font-size:11px; font-weight:600; color:#19325d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${filename}</div>
-                        <div style="font-size:9px; color:#666;">${formatBytes(img.size)} • ${format.toUpperCase()}</div>
+                        <div style="font-size:9px; color:#666;">${formatBytes(
+                          img.size
+                        )} • ${format.toUpperCase()}</div>
                       </div>
                     </div>
                     <span class="spa-badge" style="background:#e74c3c; color:white; font-size:9px;">CRITICAL</span>
                   </div>
                   <div class="spa-bulk-preview">
                     <div class="spa-bulk-preview-content">
-                      <img src="${img.src}" alt="${filename}" onerror="this.parentElement.innerHTML='<div style=\\'color:#999;font-size:11px;\\'>Preview unavailable</div>'">
+                      <img src="${
+                        img.src
+                      }" alt="${filename}" onerror="this.parentElement.innerHTML='<div style=\\'color:#999;font-size:11px;\\'>Preview unavailable</div>'">
                     </div>
                   </div>
                 </div>
               `;
-              }
-            )
+            })
             .join("")}
         </div>
       </div>
@@ -2991,7 +3428,7 @@
       </div>
     `;
 
-      backdrop.appendChild(modal);
+    backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
 
     // State management
@@ -2999,7 +3436,10 @@
     let selectedQuality = userSettings.defaultQuality;
 
     // Calculate total original size
-    const totalOriginalSize = images.reduce((sum, img) => sum + (img.size || 0), 0);
+    const totalOriginalSize = images.reduce(
+      (sum, img) => sum + (img.size || 0),
+      0
+    );
 
     // Estimation function
     function updateEstimatedSavings() {
@@ -3028,7 +3468,9 @@
 
       const savingsDisplay = modal.querySelector("#bulkEstimatedSavings");
       if (savingsDisplay) {
-        savingsDisplay.textContent = `~${formatBytes(estimatedSavings)} (${savingsPercent.toFixed(0)}%)`;
+        savingsDisplay.textContent = `~${formatBytes(
+          estimatedSavings
+        )} (${savingsPercent.toFixed(0)}%)`;
       }
     }
 
@@ -3041,8 +3483,7 @@
       updateEstimatedSavings(); // ← Update estimate when quality changes
     });
 
-
-        // Format selection handler
+    // Format selection handler
     modal.querySelectorAll(".bulk-format-btn").forEach((btn) => {
       btn.addEventListener("click", function () {
         modal.querySelectorAll(".bulk-format-btn").forEach((b) => {
@@ -3058,7 +3499,6 @@
 
     // Initial estimation
     updateEstimatedSavings();
-
 
     // Expandable list handler
     modal.querySelectorAll(".spa-bulk-item").forEach((item) => {
@@ -3078,130 +3518,151 @@
     });
 
     // Bulk compress and download
-    modal.querySelector("#startBulkCompress").addEventListener("click", async () => {
-      const startBtn = modal.querySelector("#startBulkCompress");
-      const progressSection = modal.querySelector("#bulkProgressSection");
-      const progressBar = modal.querySelector("#bulkProgressBar");
-      const progressText = modal.querySelector("#bulkProgressText");
+    modal
+      .querySelector("#startBulkCompress")
+      .addEventListener("click", async () => {
+        const startBtn = modal.querySelector("#startBulkCompress");
+        const progressSection = modal.querySelector("#bulkProgressSection");
+        const progressBar = modal.querySelector("#bulkProgressBar");
+        const progressText = modal.querySelector("#bulkProgressText");
 
-      startBtn.disabled = true;
-      startBtn.textContent = "⏳ Processing...";
-      progressSection.style.display = "block";
+        startBtn.disabled = true;
+        startBtn.textContent = "⏳ Processing...";
+        progressSection.style.display = "block";
 
-      let processed = 0;
-      const quality = selectedQuality / 100;
+        let processed = 0;
+        const quality = selectedQuality / 100;
 
-      for (let i = 0; i < images.length; i++) {
-        const img = images[i];
-        progressText.textContent = `${processed + 1} / ${images.length}`;
-        progressBar.style.width = `${((processed + 1) / images.length) * 100}%`;
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i];
+          progressText.textContent = `${processed + 1} / ${images.length}`;
+          progressBar.style.width = `${
+            ((processed + 1) / images.length) * 100
+          }%`;
 
-        try {
-          // Load image
-          let loadedImage;
-          if (img.type === "img" && img.element) {
-            loadedImage = img.element;
-          } else {
-            loadedImage = await new Promise((resolve, reject) => {
-              const tempImg = new Image();
-              tempImg.crossOrigin = "anonymous";
-              tempImg.onload = () => resolve(tempImg);
-              tempImg.onerror = () => reject("Load failed");
-              tempImg.src = img.src;
-            });
-          }
-
-                     // Determine format
-          let outputFormat = selectedFormat;
-          if (selectedFormat === "keep-original") {
-            const originalFormat = (img.src.split(".").pop().split("?")[0] || "").toLowerCase();
-
-            // Map to valid output formats
-            if (originalFormat === "jpg" || originalFormat === "jpeg") {
-              outputFormat = "jpeg";
-            } else if (originalFormat === "png") {
-              outputFormat = "png";
-            } else if (originalFormat === "webp" && formats.webp) {
-              outputFormat = "webp";
+          try {
+            // Load image
+            let loadedImage;
+            if (img.type === "img" && img.element) {
+              loadedImage = img.element;
             } else {
-              // Fallback: use jpeg for unknown formats
-              outputFormat = "jpeg";
+              loadedImage = await new Promise((resolve, reject) => {
+                const tempImg = new Image();
+                tempImg.crossOrigin = "anonymous";
+                tempImg.onload = () => resolve(tempImg);
+                tempImg.onerror = () => reject("Load failed");
+                tempImg.src = img.src;
+              });
             }
 
-            console.log(`Keep Original: ${img.src} → Format: ${originalFormat} → Output: ${outputFormat}`);
+            // Determine format
+            let outputFormat = selectedFormat;
+            if (selectedFormat === "keep-original") {
+              const originalFormat = (
+                img.src.split(".").pop().split("?")[0] || ""
+              ).toLowerCase();
+
+              // Map to valid output formats
+              if (originalFormat === "jpg" || originalFormat === "jpeg") {
+                outputFormat = "jpeg";
+              } else if (originalFormat === "png") {
+                outputFormat = "png";
+              } else if (originalFormat === "webp" && formats.webp) {
+                outputFormat = "webp";
+              } else {
+                // Fallback: use jpeg for unknown formats
+                outputFormat = "jpeg";
+              }
+
+              console.log(
+                `Keep Original: ${img.src} → Format: ${originalFormat} → Output: ${outputFormat}`
+              );
+            }
+
+            // Compress
+            const blob = await compressImage(
+              loadedImage,
+              quality,
+              loadedImage.naturalWidth,
+              loadedImage.naturalHeight,
+              outputFormat
+            );
+
+            // Size comparison with logging
+            const originalSize = img.size;
+            const compressedSize = blob.size;
+            const sizeDiff = originalSize - compressedSize;
+            const percentChange = ((sizeDiff / originalSize) * 100).toFixed(1);
+
+            console.log(`${img.src}:`);
+            console.log(`  Original: ${formatBytes(originalSize)}`);
+            console.log(`  Compressed: ${formatBytes(compressedSize)}`);
+            console.log(
+              `  Change: ${sizeDiff >= 0 ? "-" : "+"}${formatBytes(
+                Math.abs(sizeDiff)
+              )} (${percentChange}%)`
+            );
+
+            // For "keep-original": Allow downloads if compressed or up to 5% larger (re-encoding tolerance)
+            // For format changes: Only if actually smaller
+            if (selectedFormat === "keep-original") {
+              if (compressedSize > originalSize * 1.05) {
+                console.warn(
+                  `  ❌ SKIPPED: More than 5% larger after re-compression`
+                );
+                processed++;
+                continue;
+              }
+            } else {
+              if (compressedSize >= originalSize) {
+                console.warn(
+                  `  ❌ SKIPPED: Format conversion didn't reduce size`
+                );
+                processed++;
+                continue;
+              }
+            }
+
+            console.log(`  ✅ DOWNLOADING`);
+
+            // Download
+            const filename = (img.src.split("/").pop() || "image")
+              .split("?")[0]
+              .replace(/\.[^.]*$/, "");
+            const ext = outputFormat === "jpeg" ? "jpg" : outputFormat;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `compressed-${filename}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            processed++;
+            await new Promise((r) => setTimeout(r, 100)); // Small delay between downloads
+          } catch (error) {
+            console.error(`Failed to compress ${img.src}:`, error);
+            processed++;
           }
-
-
-        // Compress
-          const blob = await compressImage(
-            loadedImage,
-            quality,
-            loadedImage.naturalWidth,
-            loadedImage.naturalHeight,
-            outputFormat
-          );
-
-                    // Size comparison with logging
-          const originalSize = img.size;
-          const compressedSize = blob.size;
-          const sizeDiff = originalSize - compressedSize;
-          const percentChange = ((sizeDiff / originalSize) * 100).toFixed(1);
-
-          console.log(`${img.src}:`);
-          console.log(`  Original: ${formatBytes(originalSize)}`);
-          console.log(`  Compressed: ${formatBytes(compressedSize)}`);
-          console.log(`  Change: ${sizeDiff >= 0 ? '-' : '+'}${formatBytes(Math.abs(sizeDiff))} (${percentChange}%)`);
-
-          // For "keep-original": Allow downloads if compressed or up to 5% larger (re-encoding tolerance)
-          // For format changes: Only if actually smaller
-          if (selectedFormat === "keep-original") {
-            if (compressedSize > originalSize * 1.05) {
-              console.warn(`  ❌ SKIPPED: More than 5% larger after re-compression`);
-              processed++;
-              continue;
-            }
-          } else {
-            if (compressedSize >= originalSize) {
-              console.warn(`  ❌ SKIPPED: Format conversion didn't reduce size`);
-              processed++;
-              continue;
-            }
-          }
-
-          console.log(`  ✅ DOWNLOADING`);
-
-
-          // Download
-          const filename = (img.src.split("/").pop() || "image").split("?")[0].replace(/\.[^.]*$/, "");
-          const ext = outputFormat === "jpeg" ? "jpg" : outputFormat;
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `compressed-${filename}.${ext}`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-
-          processed++;
-          await new Promise((r) => setTimeout(r, 100)); // Small delay between downloads
-        } catch (error) {
-          console.error(`Failed to compress ${img.src}:`, error);
-          processed++;
         }
-      }
 
-            const skipped = images.length - processed;
-      if (skipped > 0) {
-        showToast(`✅ ${processed} images compressed! ${skipped} skipped (already optimal)`, "success");
-      } else {
-        showToast(`✅ ${processed} images compressed and downloaded!`, "success");
-      }
+        const skipped = images.length - processed;
+        if (skipped > 0) {
+          showToast(
+            `✅ ${processed} images compressed! ${skipped} skipped (already optimal)`,
+            "success"
+          );
+        } else {
+          showToast(
+            `✅ ${processed} images compressed and downloaded!`,
+            "success"
+          );
+        }
 
-      setTimeout(() => document.body.removeChild(backdrop), 1500);
-    });
+        setTimeout(() => document.body.removeChild(backdrop), 1500);
+      });
   }
-
 
   function exportReport(scoreData) {
     const report = {
@@ -3217,17 +3678,21 @@
         natural: i.element
           ? { width: i.element.naturalWidth, height: i.element.naturalHeight }
           : i.dimensions?.natural,
-        display: i.element ? { width: i.element.width, height: i.element.height } : i.dimensions?.display
+        display: i.element
+          ? { width: i.element.width, height: i.element.height }
+          : i.dimensions?.display,
       })),
       videos: videoData.map((v) => ({
         src: v.src,
         type: v.type,
         autoplay: v.autoplay,
-        display: v.dimensions?.display
-      }))
+        display: v.dimensions?.display,
+      })),
     };
 
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -3273,23 +3738,57 @@
         ${hiddenImages
           .sort((a, b) => (b.size || 0) - (a.size || 0)) // Sort by size descending (largest first)
           .map((img, i) => {
-            const format = (img.src.split(".").pop().split("?")[0] || "").toLowerCase();
+            const format = (
+              img.src.split(".").pop().split("?")[0] || ""
+            ).toLowerCase();
             const opt = getOptimizationLevel(img.size || 0);
             const badgeColors = {
-              "CRITICAL": { bg: "rgba(231,76,60,0.15)", color: "#e74c3c", icon: "🔴" },
-              "WARNING": { bg: "rgba(243,156,18,0.15)", color: "#f39c12", icon: "🟠" },
-              "NOTICE": { bg: "rgba(52,152,219,0.15)", color: "#3498db", icon: "🔵" },
-              "GOOD": { bg: "rgba(46,204,113,0.15)", color: "#2ecc71", icon: "🟢" }
+              CRITICAL: {
+                bg: "rgba(231,76,60,0.15)",
+                color: "#e74c3c",
+                icon: "🔴",
+              },
+              WARNING: {
+                bg: "rgba(243,156,18,0.15)",
+                color: "#f39c12",
+                icon: "🟠",
+              },
+              NOTICE: {
+                bg: "rgba(52,152,219,0.15)",
+                color: "#3498db",
+                icon: "🔵",
+              },
+              GOOD: {
+                bg: "rgba(46,204,113,0.15)",
+                color: "#2ecc71",
+                icon: "🟢",
+              },
             };
             const badgeStyle = badgeColors[opt.level] || badgeColors["GOOD"];
 
             return `
-              <div style="display:grid; grid-template-columns: auto 1fr auto auto; gap:8px; align-items:center; padding:10px; border:1px solid ${badgeStyle.color}33; border-left:3px solid ${badgeStyle.color}; border-radius:8px; margin-bottom:8px; background:${badgeStyle.bg};">
-                <div style="font-size:14px; font-weight:700;">${badgeStyle.icon}</div>
+              <div style="display:grid; grid-template-columns: auto 1fr auto auto; gap:8px; align-items:center; padding:10px; border:1px solid ${
+                badgeStyle.color
+              }33; border-left:3px solid ${
+              badgeStyle.color
+            }; border-radius:8px; margin-bottom:8px; background:${
+              badgeStyle.bg
+            };">
+                <div style="font-size:14px; font-weight:700;">${
+                  badgeStyle.icon
+                }</div>
                 <div style="min-width:0;">
-                  <div style="font-size:10px; color:${badgeStyle.color}; font-weight:700; text-transform:uppercase; margin-bottom:2px;">${opt.level}</div>
-                  <div style="font-size:10px; color:#19325d; word-break:break-all;">${img.src}</div>
-                  <div style="font-size:9px; color:#999; margin-top:2px;">${formatBytes(img.size)}</div>
+                  <div style="font-size:10px; color:${
+                    badgeStyle.color
+                  }; font-weight:700; text-transform:uppercase; margin-bottom:2px;">${
+              opt.level
+            }</div>
+                  <div style="font-size:10px; color:#19325d; word-break:break-all;">${
+                    img.src
+                  }</div>
+                  <div style="font-size:9px; color:#999; margin-top:2px;">${formatBytes(
+                    img.size
+                  )}</div>
                 </div>
                 <button class="info-hidden-btn spa-btn" data-index="${i}" style="padding:6px 8px; background:linear-gradient(135deg,#3498db,#2980b9); color:white; border:none; border-radius:6px; cursor:pointer; font-size:11px; font-weight:700;">ℹ️</button>
                 <button class="compress-hidden-btn spa-btn" data-index="${i}" style="padding:6px 8px; background:linear-gradient(135deg,#2ecc71,#27ae60); color:white; border:none; border-radius:6px; cursor:pointer; font-size:11px; font-weight:700;">🗜️</button>
@@ -3307,8 +3806,10 @@
       panel.style.display = "none";
     });
 
-        // Create a sorted copy for button handlers
-    const sortedHiddenImages = hiddenImages.sort((a, b) => (b.size || 0) - (a.size || 0));
+    // Create a sorted copy for button handlers
+    const sortedHiddenImages = hiddenImages.sort(
+      (a, b) => (b.size || 0) - (a.size || 0)
+    );
 
     panel.querySelectorAll(".compress-hidden-btn").forEach((btn) => {
       btn.addEventListener("click", function () {
@@ -3322,12 +3823,13 @@
       btn.addEventListener("click", function () {
         const index = parseInt(this.dataset.index, 10);
         const img = sortedHiddenImages[index];
-        const format = (img.src.split(".").pop().split("?")[0] || "").toLowerCase();
+        const format = (
+          img.src.split(".").pop().split("?")[0] || ""
+        ).toLowerCase();
         const recs = getImageRecommendations(img, img.size || 0, format);
         showImageInfoModal(img, img.size || 0, recs);
       });
     });
-
 
     return panel;
   }
@@ -3337,8 +3839,6 @@
   // ============================================================================
 
   function showEnhancedSummary(scoreData, hiddenImages, totalAnalyzed) {
-
-
     const summary = document.createElement("div");
     summary.id = "spaSummaryBox";
     summary.className = "spa-glass-panel";
@@ -3359,13 +3859,19 @@
         <div>
           <div style="font-size:11px; color:#666; margin-bottom:2px;">Performance Score</div>
           <div style="display:flex; align-items:center; gap:6px;">
-            <div style="font-size:32px; font-weight:800; color:${scoreColor};">${scoreData.score}</div>
+            <div style="font-size:32px; font-weight:800; color:${scoreColor};">${
+      scoreData.score
+    }</div>
             <span style="font-size:18px;">/100</span>
           </div>
-          <div style="font-size:10px; color:#999;">Grade ${scoreData.grade}</div>
+          <div style="font-size:10px; color:#999;">Grade ${
+            scoreData.grade
+          }</div>
         </div>
         <div style="text-align:center; padding:12px; background:${scoreColor}22; border-radius:8px;">
-          <div style="font-size:24px; margin-bottom:2px;">${scoreData.grade}</div>
+          <div style="font-size:24px; margin-bottom:2px;">${
+            scoreData.grade
+          }</div>
           <div style="font-size:9px; color:${scoreColor}; font-weight:600; text-transform:uppercase;">Grade</div>
         </div>
       </div>
@@ -3377,7 +3883,9 @@
         </div>
         <div style="padding:10px; background:rgba(0,0,0,0.02); border-radius:8px;">
           <div style="font-size:10px; color:#999;">Hidden</div>
-          <div style="font-size:16px; font-weight:700; color:#19325d;">${hiddenImages.length}</div>
+          <div style="font-size:16px; font-weight:700; color:#19325d;">${
+            hiddenImages.length
+          }</div>
         </div>
       </div>
 
@@ -3413,7 +3921,7 @@
       </div>
     `;
 
-       // Create draggable toggle button (left side, like main toolbar)
+    // Create draggable toggle button (left side, like main toolbar)
     const toggleBtn = document.createElement("button");
     toggleBtn.id = "spaSummaryToggle";
     toggleBtn.className = "spa-btn";
@@ -3425,7 +3933,10 @@
     if (savedReportTop == null) {
       savedReportTop = Math.max(200, Math.floor(window.innerHeight / 2) + 50);
     }
-    savedReportTop = Math.max(150, Math.min(savedReportTop, window.innerHeight - 100));
+    savedReportTop = Math.max(
+      150,
+      Math.min(savedReportTop, window.innerHeight - 100)
+    );
 
     toggleBtn.style.cssText = `
       position: fixed;
@@ -3535,8 +4046,12 @@
       });
     });
 
-    summary.querySelector("#bulkCompressBtn")?.addEventListener("click", bulkCompressCritical);
-    summary.querySelector("#exportReportBtn")?.addEventListener("click", () => showExportModal(scoreData));
+    summary
+      .querySelector("#bulkCompressBtn")
+      ?.addEventListener("click", bulkCompressCritical);
+    summary
+      .querySelector("#exportReportBtn")
+      ?.addEventListener("click", () => showExportModal(scoreData));
     summary.querySelector("#showHiddenBtn")?.addEventListener("click", () => {
       const panel = document.querySelector(".spa-hidden-panel");
       if (panel) {
@@ -3731,7 +4246,9 @@
       this.disabled = false;
       toolbar.querySelector("#quickStats").style.display = "block";
       toolbar.querySelector("#quickScore").textContent = performanceScore || 0;
-      toolbar.querySelector("#quickImages").textContent = String(imageData.length);
+      toolbar.querySelector("#quickImages").textContent = String(
+        imageData.length
+      );
     });
 
     clearBtn.addEventListener("click", () => {
@@ -3740,7 +4257,9 @@
           overlay?.remove();
         } catch (e) {}
       });
-      document.querySelectorAll(".spa-image-overlay, .spa-video-overlay").forEach((el) => el.remove());
+      document
+        .querySelectorAll(".spa-image-overlay, .spa-video-overlay")
+        .forEach((el) => el.remove());
       document.getElementById("spaSummaryContainer")?.remove();
       document.querySelector(".spa-hidden-panel")?.remove();
       if (resizeObserver) {
@@ -3760,12 +4279,21 @@
       toolbar.querySelector("#quickStats").style.display = "none";
     });
 
-    toolbar.querySelector("#gtmBtn").addEventListener("click", () => showGTMAnalysisModal());
-    toolbar.querySelector("#historyBtn").addEventListener("click", () => showHistoryModal());
-    toolbar.querySelector("#settingsBtn").addEventListener("click", () => showSettingsModal());
-    toolbar.querySelector("#legendBtn").addEventListener("click", () => showIconLegendModal());
-    toolbar.querySelector("#blockAnalysisBtn").addEventListener("click", () => showBlockAnalysisModal());
-
+    toolbar
+      .querySelector("#gtmBtn")
+      .addEventListener("click", () => showGTMAnalysisModal());
+    toolbar
+      .querySelector("#historyBtn")
+      .addEventListener("click", () => showHistoryModal());
+    toolbar
+      .querySelector("#settingsBtn")
+      .addEventListener("click", () => showSettingsModal());
+    toolbar
+      .querySelector("#legendBtn")
+      .addEventListener("click", () => showIconLegendModal());
+    toolbar
+      .querySelector("#blockAnalysisBtn")
+      .addEventListener("click", () => showBlockAnalysisModal());
   }
   // ============================================================================
   // SECTION 19: SETTINGS MODAL
@@ -3800,7 +4328,9 @@
             <div style="font-size:13px; font-weight:700; color:#19325d;">Auto-analyze on Load</div>
             <div style="font-size:10px; color:#999;">Run analysis automatically after page load</div>
           </div>
-          <input type="checkbox" id="setAutoAnalyze" ${userSettings.autoAnalyze ? "checked" : ""}>
+          <input type="checkbox" id="setAutoAnalyze" ${
+            userSettings.autoAnalyze ? "checked" : ""
+          }>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(0,0,0,0.02); border-radius:8px;">
@@ -3809,8 +4339,12 @@
             <div style="font-size:10px; color:#999;">Compression quality initial value</div>
           </div>
           <div style="display:flex; align-items:center; gap:10px;">
-            <span id="qualityDisplay" style="font-size:12px; color:#fb741c;">${userSettings.defaultQuality}</span>
-            <input type="range" id="setDefaultQuality" min="10" max="100" step="5" value="${userSettings.defaultQuality}">
+            <span id="qualityDisplay" style="font-size:12px; color:#fb741c;">${
+              userSettings.defaultQuality
+            }</span>
+            <input type="range" id="setDefaultQuality" min="10" max="100" step="5" value="${
+              userSettings.defaultQuality
+            }">
           </div>
         </div>
 
@@ -3819,7 +4353,9 @@
             <div style="font-size:13px; font-weight:700; color:#19325d;">Show Video Overlays</div>
             <div style="font-size:10px; color:#999;">Include video elements during analysis</div>
           </div>
-          <input type="checkbox" id="setShowVideos" ${userSettings.showVideos ? "checked" : ""}>
+          <input type="checkbox" id="setShowVideos" ${
+            userSettings.showVideos ? "checked" : ""
+          }>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(0,0,0,0.02); border-radius:8px;">
@@ -3827,7 +4363,9 @@
             <div style="font-size:13px; font-weight:700; color:#19325d;">Enable Sounds</div>
             <div style="font-size:10px; color:#999;">Play sounds on actions</div>
           </div>
-          <input type="checkbox" id="setEnableSounds" ${userSettings.enableSounds ? "checked" : ""}>
+          <input type="checkbox" id="setEnableSounds" ${
+            userSettings.enableSounds ? "checked" : ""
+          }>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(0,0,0,0.02); border-radius:8px;">
@@ -3836,11 +4374,21 @@
             <div style="font-size:10px; color:#999;">Which image level is shown initially</div>
           </div>
           <select id="setDefaultFilter" style="padding:8px; border:1px solid rgba(0,0,0,0.1); border-radius:6px;">
-            <option value="all" ${userSettings.defaultFilter === "all" ? "selected" : ""}>All</option>
-            <option value="CRITICAL" ${userSettings.defaultFilter === "CRITICAL" ? "selected" : ""}>Critical</option>
-            <option value="WARNING" ${userSettings.defaultFilter === "WARNING" ? "selected" : ""}>Warning</option>
-            <option value="NOTICE" ${userSettings.defaultFilter === "NOTICE" ? "selected" : ""}>Notice</option>
-            <option value="GOOD" ${userSettings.defaultFilter === "GOOD" ? "selected" : ""}>Good</option>
+            <option value="all" ${
+              userSettings.defaultFilter === "all" ? "selected" : ""
+            }>All</option>
+            <option value="CRITICAL" ${
+              userSettings.defaultFilter === "CRITICAL" ? "selected" : ""
+            }>Critical</option>
+            <option value="WARNING" ${
+              userSettings.defaultFilter === "WARNING" ? "selected" : ""
+            }>Warning</option>
+            <option value="NOTICE" ${
+              userSettings.defaultFilter === "NOTICE" ? "selected" : ""
+            }>Notice</option>
+            <option value="GOOD" ${
+              userSettings.defaultFilter === "GOOD" ? "selected" : ""
+            }>Good</option>
           </select>
         </div>
 
@@ -3849,7 +4397,9 @@
             <div style="font-size:13px; font-weight:700; color:#19325d;">Show Image Previews</div>
             <div style="font-size:10px; color:#999;">Display image preview in Info tab</div>
           </div>
-          <input type="checkbox" id="setShowPreviews" ${userSettings.showImagePreviews ? "checked" : ""}>
+          <input type="checkbox" id="setShowPreviews" ${
+            userSettings.showImagePreviews ? "checked" : ""
+          }>
         </div>
       </div>
 
@@ -3868,9 +4418,11 @@
       qDisp.textContent = String(qSlider.value);
     });
 
-    modal.querySelectorAll(".close-settings").forEach((btn) =>
-      btn.addEventListener("click", () => document.body.removeChild(backdrop))
-    );
+    modal
+      .querySelectorAll(".close-settings")
+      .forEach((btn) =>
+        btn.addEventListener("click", () => document.body.removeChild(backdrop))
+      );
 
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) document.body.removeChild(backdrop);
@@ -3880,9 +4432,12 @@
       userSettings.autoAnalyze = modal.querySelector("#setAutoAnalyze").checked;
       userSettings.defaultQuality = parseInt(qSlider.value, 10);
       userSettings.showVideos = modal.querySelector("#setShowVideos").checked;
-      userSettings.enableSounds = modal.querySelector("#setEnableSounds").checked;
-      userSettings.defaultFilter = modal.querySelector("#setDefaultFilter").value;
-      userSettings.showImagePreviews = modal.querySelector("#setShowPreviews").checked;
+      userSettings.enableSounds =
+        modal.querySelector("#setEnableSounds").checked;
+      userSettings.defaultFilter =
+        modal.querySelector("#setDefaultFilter").value;
+      userSettings.showImagePreviews =
+        modal.querySelector("#setShowPreviews").checked;
       saveSettings();
       showToast("✅ Settings saved!", "success");
       document.body.removeChild(backdrop);
@@ -3953,16 +4508,20 @@
     backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
 
-    modal.querySelectorAll(".close-history").forEach((btn) =>
-      btn.addEventListener("click", () => document.body.removeChild(backdrop))
-    );
+    modal
+      .querySelectorAll(".close-history")
+      .forEach((btn) =>
+        btn.addEventListener("click", () => document.body.removeChild(backdrop))
+      );
 
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) document.body.removeChild(backdrop);
     });
 
     modal.querySelector("#exportHistory").addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(analysisHistory, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(analysisHistory, null, 2)], {
+        type: "application/json",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -3981,7 +4540,7 @@
       document.body.removeChild(backdrop);
     });
   }
-    // ============================================================================
+  // ============================================================================
   // SECTION 21: GTM DEEP ANALYSIS MODAL (FULL VERSION FROM ORIGINAL)
   // This section contains the complete GTM source detection and deep analysis
   // Modify this section to change GTM detection logic or add new vendor signatures
@@ -3998,8 +4557,8 @@
       vendors: [],
       signatures: {
         dealerOnMarkers: 0,
-        thirdPartyMarkers: 0
-      }
+        thirdPartyMarkers: 0,
+      },
     };
 
     try {
@@ -4013,98 +4572,98 @@
           domains: /callrail\.com|cdn\.callrail/i,
           keywords: /callrail|swap\.js|dynamic_number/i,
           category: "Call Tracking",
-          weight: 5
+          weight: 5,
         },
         CallTrackingMetrics: {
           domains: /calltrackingmetrics\.com/i,
           keywords: /calltrackingmetrics/i,
           category: "Call Tracking",
-          weight: 5
+          weight: 5,
         },
         Mongoose: {
           domains: /mongooseresearch\.com|callrevu\.com/i,
           keywords: /mongoose|callrevu/i,
           category: "Call Tracking",
-          weight: 5
+          weight: 5,
         },
         ActivEngage: {
           domains: /activengage\.com|ae-cdn/i,
           keywords: /activengage|ae_chat/i,
           category: "Live Chat",
-          weight: 5
+          weight: 5,
         },
         Gubagoo: {
           domains: /gubagoo\.com|gubagoo\.io/i,
           keywords: /gubagoo/i,
           category: "Live Chat",
-          weight: 5
+          weight: 5,
         },
         CarNow: {
           domains: /carnow\.com|carnowcdn/i,
           keywords: /carnow|cn_chat/i,
           category: "Live Chat",
-          weight: 5
+          weight: 5,
         },
         VinSolutions: {
           domains: /vinsolutions\.com|vincue/i,
           keywords: /vinsolutions|connect_cta/i,
           category: "CRM",
-          weight: 4
+          weight: 4,
         },
         Elead: {
           domains: /elead-crm\.com|eleadcrm/i,
           keywords: /elead|eleadcrm/i,
           category: "CRM",
-          weight: 4
+          weight: 4,
         },
         AutoSweet: {
           domains: /autosweet\.com|silentvisitor/i,
           keywords: /autosweet|silentvisitor|as_track/i,
           category: "Analytics",
-          weight: 4
+          weight: 4,
         },
         FullStory: {
           domains: /fullstory\.com/i,
           keywords: /fullstory|_fs_/i,
           category: "Analytics",
-          weight: 3
+          weight: 3,
         },
         Hotjar: {
           domains: /hotjar\.com/i,
           keywords: /hotjar|_hj_id/i,
           category: "Analytics",
-          weight: 3
+          weight: 3,
         },
         Facebook: {
           domains: /facebook\.com|fbcdn/i,
           keywords: /fbevents/i,
           category: "Advertising",
-          weight: 2
+          weight: 2,
         },
         AdRoll: {
           domains: /adroll\.com/i,
           keywords: /adroll|__adroll_adv/i,
           category: "Advertising",
-          weight: 3
+          weight: 3,
         },
         Criteo: {
           domains: /criteo\.com|criteo\.net/i,
           keywords: /criteo|criteoq/i,
           category: "Advertising",
-          weight: 3
+          weight: 3,
         },
         Conversica: {
           domains: /conversica\.com/i,
           keywords: /conversica/i,
           category: "AI Engagement",
-          weight: 4
+          weight: 4,
         },
         Podium: {
           domains: /podium\.com|podium\.io/i,
           keywords: /podium|podium_widget/i,
           category: "Reviews",
-          weight: 4
-        }
+          weight: 4,
+        },
       };
 
       // DETECT VENDORS
@@ -4128,59 +4687,81 @@
             name: vendorName,
             category: sigs.category,
             confidence: Math.min(95, score * 15),
-            evidence: vendorEvidence
+            evidence: vendorEvidence,
           });
         }
       }
 
       // DEALERON SIGNATURE DETECTION
       const dealerOnSignatures = {
-        eventModelVars: /eventModel\.(item_make|item_model|item_year|cta_type|cta_name|page_type|event_owner)/g,
-        automotiveDomains: /(kia|toyota|subaru|chrysler|dodge|jeep|ram|alfaromeo|fiat)\.(com|net)/gi,
+        eventModelVars:
+          /eventModel\.(item_make|item_model|item_year|cta_type|cta_name|page_type|event_owner)/g,
+        automotiveDomains:
+          /(kia|toyota|subaru|chrysler|dodge|jeep|ram|alfaromeo|fiat)\.(com|net)/gi,
         gaPropertyIds: /G-[A-Z0-9]{7,}/g,
         phoneTracking: /\d{3}-\d{3}-\d{4}/g,
-        vehicleTracking: /(inventory_date|item_condition|item_price|item_number|item_variant|item_color)/gi,
-        elementTracking: /(element_text|element_color|element_order|element_type|element_subtype)/gi,
-        platformMarkers: /(dealeron|cosmos_dealer_id|dealertag)/gi
+        vehicleTracking:
+          /(inventory_date|item_condition|item_price|item_number|item_variant|item_color)/gi,
+        elementTracking:
+          /(element_text|element_color|element_order|element_type|element_subtype)/gi,
+        platformMarkers: /(dealeron|cosmos_dealer_id|dealertag)/gi,
       };
 
-      const eventModelMatches = containerCode.match(dealerOnSignatures.eventModelVars);
+      const eventModelMatches = containerCode.match(
+        dealerOnSignatures.eventModelVars
+      );
       if (eventModelMatches && eventModelMatches.length >= 3) {
         analysis.signatures.dealerOnMarkers += 3;
-        analysis.evidence.push(`${eventModelMatches.length} DealerOn eventModel variables`);
+        analysis.evidence.push(
+          `${eventModelMatches.length} DealerOn eventModel variables`
+        );
       }
 
-      const domainMatches = containerCode.match(dealerOnSignatures.automotiveDomains);
+      const domainMatches = containerCode.match(
+        dealerOnSignatures.automotiveDomains
+      );
       if (domainMatches && domainMatches.length >= 15) {
         analysis.signatures.dealerOnMarkers += 4;
-        analysis.evidence.push(`${domainMatches.length} automotive dealership domains`);
+        analysis.evidence.push(
+          `${domainMatches.length} automotive dealership domains`
+        );
       }
 
       const gaMatches = containerCode.match(dealerOnSignatures.gaPropertyIds);
       if (gaMatches && gaMatches.length >= 4) {
         analysis.signatures.dealerOnMarkers += 2;
-        analysis.evidence.push(`${gaMatches.length} GA4 property IDs (multi-dealer)`);
+        analysis.evidence.push(
+          `${gaMatches.length} GA4 property IDs (multi-dealer)`
+        );
       }
 
-      const phoneMatches = containerCode.match(dealerOnSignatures.phoneTracking);
+      const phoneMatches = containerCode.match(
+        dealerOnSignatures.phoneTracking
+      );
       if (phoneMatches && phoneMatches.length >= 10) {
         analysis.signatures.dealerOnMarkers += 2;
         analysis.evidence.push(`${phoneMatches.length} phone tracking numbers`);
       }
 
-      const vehicleMatches = containerCode.match(dealerOnSignatures.vehicleTracking);
+      const vehicleMatches = containerCode.match(
+        dealerOnSignatures.vehicleTracking
+      );
       if (vehicleMatches && vehicleMatches.length >= 5) {
         analysis.signatures.dealerOnMarkers += 2;
         analysis.evidence.push("Vehicle inventory tracking detected");
       }
 
-      const elementMatches = containerCode.match(dealerOnSignatures.elementTracking);
+      const elementMatches = containerCode.match(
+        dealerOnSignatures.elementTracking
+      );
       if (elementMatches && elementMatches.length >= 3) {
         analysis.signatures.dealerOnMarkers += 1;
         analysis.evidence.push("DealerOn element tracking found");
       }
 
-      const platformMatches = containerCode.match(dealerOnSignatures.platformMarkers);
+      const platformMatches = containerCode.match(
+        dealerOnSignatures.platformMarkers
+      );
       if (platformMatches && platformMatches.length > 0) {
         analysis.signatures.dealerOnMarkers += 5;
         analysis.evidence.push("Direct DealerOn platform reference");
@@ -4226,7 +4807,7 @@
       dataLayerEvents: [],
       performanceImpact: {},
       privacyIssues: [],
-      recommendations: []
+      recommendations: [],
     };
 
     try {
@@ -4240,17 +4821,17 @@
           loadTime: Math.round(perfEntry.duration),
           size: perfEntry.transferSize,
           blocking: perfEntry.renderBlockingStatus === "blocking",
-          cached: perfEntry.transferSize === 0
+          cached: perfEntry.transferSize === 0,
         };
       }
 
       const tagPatterns = {
-        "GA4": /gtag\(|G-[A-Z0-9]{10}|google-analytics\.com\/analytics\.js/g,
+        GA4: /gtag\(|G-[A-Z0-9]{10}|google-analytics\.com\/analytics\.js/g,
         "Facebook Pixel": /facebook|fbq|connect\.facebook\.net/g,
         "LinkedIn Insight": /linkedin|snap\.licdn\.com/g,
         "TikTok Pixel": /tiktok|analytics\.tiktok\.com/g,
-        "Hotjar": /hotjar|static\.hotjar\.com/g,
-        "Custom HTML": /<script|<iframe/g
+        Hotjar: /hotjar|static\.hotjar\.com/g,
+        "Custom HTML": /<script|<iframe/g,
       };
 
       Object.entries(tagPatterns).forEach(([tagType, pattern]) => {
@@ -4259,7 +4840,7 @@
           analysis.tags.push({
             type: tagType,
             count: matches.length,
-            detected: true
+            detected: true,
           });
         }
       });
@@ -4273,7 +4854,11 @@
         });
         analysis.dataLayerEvents = Array.from(events).map((event) => ({
           name: event,
-          type: event.toLowerCase().includes("page") ? "Pageview" : event.toLowerCase().includes("click") ? "Click" : "Custom"
+          type: event.toLowerCase().includes("page")
+            ? "Pageview"
+            : event.toLowerCase().includes("click")
+            ? "Click"
+            : "Custom",
         }));
       }
 
@@ -4281,7 +4866,7 @@
         analysis.recommendations.push({
           type: "performance",
           priority: "high",
-          message: `GTM load time is ${analysis.performanceImpact.loadTime}ms. Consider lazy-loading non-critical tags.`
+          message: `GTM load time is ${analysis.performanceImpact.loadTime}ms. Consider lazy-loading non-critical tags.`,
         });
       }
     } catch (error) {
@@ -4349,15 +4934,23 @@
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:24px;">
         <div style="padding:16px; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); border-radius:10px; color:white;">
           <div style="font-size:12px; opacity:0.9; margin-bottom:4px;">Containers Found</div>
-          <div style="font-size:28px; font-weight:700;">${containers.length}</div>
+          <div style="font-size:28px; font-weight:700;">${
+            containers.length
+          }</div>
         </div>
         <div style="padding:16px; background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%); border-radius:10px; color:white;">
           <div style="font-size:12px; opacity:0.9; margin-bottom:4px;">Total Tags</div>
-          <div style="font-size:28px; font-weight:700;">${analyses.reduce((sum, a) => sum + a.tags.length, 0)}</div>
+          <div style="font-size:28px; font-weight:700;">${analyses.reduce(
+            (sum, a) => sum + a.tags.length,
+            0
+          )}</div>
         </div>
         <div style="padding:16px; background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%); border-radius:10px; color:white;">
           <div style="font-size:12px; opacity:0.9; margin-bottom:4px;">Data Layer Events</div>
-          <div style="font-size:28px; font-weight:700;">${analyses.reduce((sum, a) => sum + a.dataLayerEvents.length, 0)}</div>
+          <div style="font-size:28px; font-weight:700;">${analyses.reduce(
+            (sum, a) => sum + a.dataLayerEvents.length,
+            0
+          )}</div>
         </div>
       </div>
     `;
@@ -4365,22 +4958,45 @@
     analyses.forEach((analysis, index) => {
       const source = analysis.sourceInfo;
       const perfImpact = analysis.performanceImpact;
-      let impactColor = perfImpact.loadTime > 500 ? "#e74c3c" : perfImpact.loadTime > 200 ? "#f39c12" : "#2ecc71";
+      let impactColor =
+        perfImpact.loadTime > 500
+          ? "#e74c3c"
+          : perfImpact.loadTime > 200
+          ? "#f39c12"
+          : "#2ecc71";
 
       reportHTML += `
         <div style="background:white; border:2px solid rgba(0,0,0,0.06); border-radius:12px; padding:20px; margin-bottom:20px;">
           <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:16px;">
             <div>
               <h3 style="margin:0 0 8px 0; font-size:18px; color:#19325d;">
-                Container <code style="background:rgba(0,0,0,0.05); padding:4px 8px; border-radius:4px;">${analysis.containerId}</code>
+                Container <code style="background:rgba(0,0,0,0.05); padding:4px 8px; border-radius:4px;">${
+                  analysis.containerId
+                }</code>
               </h3>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <span class="spa-badge" style="background:${source.isDealerOn ? "rgba(46,204,113,0.1)" : "rgba(231,76,60,0.1)"}; color:${source.isDealerOn ? "#2ecc71" : "#e74c3c"}; border:2px solid ${source.isDealerOn ? "#2ecc71" : "#e74c3c"}; font-size:12px; font-weight:700;">${source.isDealerOn ? "✅ " : "⚠️ "}${source.source}</span>
-                <span class="spa-badge" style="background:${impactColor}22; color:${impactColor};">${perfImpact.loadTime || 0}ms</span>
-                <span class="spa-badge" style="background:rgba(52,152,219,0.1); color:#3498db; font-size:11px;">${source.confidence}% confidence</span>
+                <span class="spa-badge" style="background:${
+                  source.isDealerOn
+                    ? "rgba(46,204,113,0.1)"
+                    : "rgba(231,76,60,0.1)"
+                }; color:${
+        source.isDealerOn ? "#2ecc71" : "#e74c3c"
+      }; border:2px solid ${
+        source.isDealerOn ? "#2ecc71" : "#e74c3c"
+      }; font-size:12px; font-weight:700;">${
+        source.isDealerOn ? "✅ " : "⚠️ "
+      }${source.source}</span>
+                <span class="spa-badge" style="background:${impactColor}22; color:${impactColor};">${
+        perfImpact.loadTime || 0
+      }ms</span>
+                <span class="spa-badge" style="background:rgba(52,152,219,0.1); color:#3498db; font-size:11px;">${
+                  source.confidence
+                }% confidence</span>
               </div>
             </div>
-            <button class="copy-container-id spa-btn" data-id="${analysis.containerId}" style="padding:8px 14px; background:#3498db; color:white; border:none; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600;">
+            <button class="copy-container-id spa-btn" data-id="${
+              analysis.containerId
+            }" style="padding:8px 14px; background:#3498db; color:white; border:none; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600;">
               📋 Copy ID
             </button>
           </div>
@@ -4390,7 +5006,12 @@
               ? `
             <div style="margin-top:12px; padding:10px; background:rgba(0,0,0,0.02); border-radius:6px;">
               <div style="font-size:10px; font-weight:600; color:#19325d; margin-bottom:6px;">🔍 Detection Evidence</div>
-              ${source.evidence.map((ev) => `<div style="font-size:9px; color:#666; margin:2px 0;">• ${ev}</div>`).join("")}
+              ${source.evidence
+                .map(
+                  (ev) =>
+                    `<div style="font-size:9px; color:#666; margin:2px 0;">• ${ev}</div>`
+                )
+                .join("")}
             </div>
           `
               : ""
@@ -4400,19 +5021,29 @@
             source.vendors && source.vendors.length > 0
               ? `
             <div style="margin-top:12px; padding:10px; background:rgba(251,116,28,0.05); border-left:3px solid #fb741c; border-radius:4px;">
-              <div style="font-size:10px; font-weight:600; color:#fb741c; margin-bottom:6px;">🔌 Third-Party Vendors Detected: ${source.vendors.length}</div>
+              <div style="font-size:10px; font-weight:600; color:#fb741c; margin-bottom:6px;">🔌 Third-Party Vendors Detected: ${
+                source.vendors.length
+              }</div>
               ${source.vendors
                 .map(
                   (v) => `
                 <div style="margin:6px 0; padding:6px; background:white; border-radius:4px; border:1px solid rgba(0,0,0,0.06);">
                   <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                      <span style="font-size:11px; font-weight:700; color:#19325d;">${v.name}</span>
-                      <span style="font-size:9px; color:#666; margin-left:6px;">${v.category}</span>
+                      <span style="font-size:11px; font-weight:700; color:#19325d;">${
+                        v.name
+                      }</span>
+                      <span style="font-size:9px; color:#666; margin-left:6px;">${
+                        v.category
+                      }</span>
                     </div>
-                    <span style="font-size:9px; color:#3498db; font-weight:600;">${v.confidence}%</span>
+                    <span style="font-size:9px; color:#3498db; font-weight:600;">${
+                      v.confidence
+                    }%</span>
                   </div>
-                  <div style="font-size:8px; color:#999; margin-top:2px;">${v.evidence.join(", ")}</div>
+                  <div style="font-size:8px; color:#999; margin-top:2px;">${v.evidence.join(
+                    ", "
+                  )}</div>
                 </div>
               `
                 )
@@ -4426,9 +5057,16 @@
             analysis.tags.length > 0
               ? `
             <div style="margin-bottom:12px;">
-              <div style="font-size:11px; font-weight:600; color:#19325d; margin-bottom:6px;">🏷️ Tags Detected: ${analysis.tags.length}</div>
+              <div style="font-size:11px; font-weight:600; color:#19325d; margin-bottom:6px;">🏷️ Tags Detected: ${
+                analysis.tags.length
+              }</div>
               <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                ${analysis.tags.map((tag) => `<span style="padding:4px 10px; background:rgba(251,116,28,0.1); color:#fb741c; border-radius:6px; font-size:10px; font-weight:600;">${tag.type}</span>`).join("")}
+                ${analysis.tags
+                  .map(
+                    (tag) =>
+                      `<span style="padding:4px 10px; background:rgba(251,116,28,0.1); color:#fb741c; border-radius:6px; font-size:10px; font-weight:600;">${tag.type}</span>`
+                  )
+                  .join("")}
               </div>
             </div>
           `
@@ -4440,7 +5078,12 @@
               ? `
             <div style="background:rgba(46,204,113,0.05); border-left:4px solid #2ecc71; padding:12px; border-radius:4px;">
               <div style="font-size:11px; font-weight:600; color:#2ecc71; margin-bottom:6px;">💡 Recommendations</div>
-              ${analysis.recommendations.map((rec) => `<div style="font-size:10px; color:#19325d; margin:4px 0;">• ${rec.message}</div>`).join("")}
+              ${analysis.recommendations
+                .map(
+                  (rec) =>
+                    `<div style="font-size:10px; color:#19325d; margin:4px 0;">• ${rec.message}</div>`
+                )
+                .join("")}
             </div>
           `
               : ""
@@ -4462,12 +5105,19 @@
 
     modal.innerHTML = reportHTML;
 
-    modal.querySelector("#closeGTM")?.addEventListener("click", () => document.body.removeChild(backdrop));
-    modal.querySelector("#closeGTMModal")?.addEventListener("click", () => document.body.removeChild(backdrop));
+    modal
+      .querySelector("#closeGTM")
+      ?.addEventListener("click", () => document.body.removeChild(backdrop));
+    modal
+      .querySelector("#closeGTMModal")
+      ?.addEventListener("click", () => document.body.removeChild(backdrop));
 
     modal.querySelectorAll(".copy-container-id").forEach((btn) => {
       btn.addEventListener("click", function () {
-        copyToClipboard(this.getAttribute("data-id"), "GTM Container ID copied!");
+        copyToClipboard(
+          this.getAttribute("data-id"),
+          "GTM Container ID copied!"
+        );
       });
     });
 
@@ -4487,7 +5137,6 @@
       if (e.target === backdrop) document.body.removeChild(backdrop);
     });
   }
-
 
   // ============================================================================
   // SECTION 22: ICON LEGEND MODAL
@@ -4555,9 +5204,11 @@
     backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
 
-    modal.querySelectorAll(".close-legend").forEach((btn) =>
-      btn.addEventListener("click", () => document.body.removeChild(backdrop))
-    );
+    modal
+      .querySelectorAll(".close-legend")
+      .forEach((btn) =>
+        btn.addEventListener("click", () => document.body.removeChild(backdrop))
+      );
 
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) document.body.removeChild(backdrop);
@@ -4617,4 +5268,3 @@
   // END OF SCRIPT
   // ============================================================================
 })();
-
