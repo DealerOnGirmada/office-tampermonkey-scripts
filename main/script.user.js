@@ -2,7 +2,7 @@
 // @name         Office Productivity Script
 // @namespace    https://github.com/DealerOnGirmada/office-tampermonkey-scripts
 // @description  Revolutionary performance analyzer with GTM deep inspection, multi-format compression, AI recommendations, keyboard shortcuts & settings
-// @version      1.0.0
+// @version      1.0.1
 // @author       Pratik Chabria
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/script.user.js
@@ -21,7 +21,7 @@
   // Modify this section to add new global variables or settings
   // ============================================================================
 
-  const CURRENT_VERSION = "1.0.0";
+  const CURRENT_VERSION = "1.0.1";
   let analysisActive = false;
   let analysisCancelled = false;
   let overlays = [];
