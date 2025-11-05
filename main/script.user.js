@@ -7,8 +7,8 @@
 // @match        *://*/*
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @updateURL    https://itdealeron-my.sharepoint.com/:u:/g/personal/pratik_chabria_dealeron_com/EUzqOn5ym5FGip2Ho2T2ytMBqdNCBfgGnIZQkpnSr35MOA?e=Zwqltb
-// @downloadURL  https://itdealeron-my.sharepoint.com/:u:/g/personal/pratik_chabria_dealeron_com/EUzqOn5ym5FGip2Ho2T2ytMBqdNCBfgGnIZQkpnSr35MOA?e=Zwqltb
+// @updateURL    https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/script.user.js
+// @downloadURL  https://raw.githubcontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/script.user.js
 // ==/UserScript==
 
 (function () {
