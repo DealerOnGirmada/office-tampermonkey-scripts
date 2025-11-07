@@ -18,7 +18,7 @@
   "use strict";
   const CURRENT_VERSION = "1.2";
   const VERSION_URL =
-    "https://dealerongirmada.github.io/office-tampermonkey-scripts/main/version.json";
+    "https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/version.json";
   const SCRIPT_URL =
     "https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/script.user.js";
 
@@ -30,7 +30,6 @@
         url: VERSION_URL + "?t=" + Date.now(),
         responseType: "json",
         onload: function (response) {
-          console.log("My response", response);
           if (response.status !== 200) {
             console.error("Failed to fetch version.json:", response.status);
             return;
