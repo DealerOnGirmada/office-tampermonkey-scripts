@@ -5,8 +5,8 @@
 // @version      1.2
 // @author       Pratik Chabria
 // @match        *://*/*
-// @updateURL    https://dealerongirmada.github.io/office-tampermonkey-scripts/main/script.user.js
-// @downloadURL  https://dealerongirmada.github.io/office-tampermonkey-scripts/main/script.user.js
+// @updateURL    https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/script.user.js
+// @downloadURL  https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/script.user.js
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_notification
@@ -20,7 +20,7 @@
   const VERSION_URL =
     "https://dealerongirmada.github.io/office-tampermonkey-scripts/main/version.json";
   const SCRIPT_URL =
-    "https://dealerongirmada.github.io/office-tampermonkey-scripts/main/script.user.js";
+    "https://raw.githubusercontent.com/DealerOnGirmada/office-tampermonkey-scripts/main/main/script.user.js";
 
   setInterval(checkForUpdate, 30000);
   async function checkForUpdate() {
