@@ -30,6 +30,7 @@
         url: VERSION_URL + "?t=" + Date.now(),
         responseType: "json",
         onload: function (response) {
+          console.log("My response", response);
           if (response.status !== 200) {
             console.error("Failed to fetch version.json:", response.status);
             return;
